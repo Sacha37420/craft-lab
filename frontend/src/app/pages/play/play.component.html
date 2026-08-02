@@ -1,0 +1,70 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Jouer</h2>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (!playing()) {
+    @if (loadingMaps()) {
+      <p class="loading">Chargement…</p>
+    } @else if (maps().length === 0) {
+      <p class="empty-state">Aucune carte définie — créez-en une depuis la page Cartes.</p>
+    } @else {
+      <div class="catalogue-grid">
+        @for (m of maps(); track m.id) {
+          <div class="catalogue-card selectable" [class.selected]="selectedMapId === m.id" (click)="selectedMapId = m.id!">
+            <div class="catalogue-card-header"><strong>{{ m.name }}</strong></div>
+            <p class="catalogue-card-desc">{{ m.description || '—' }}</p>
+          </div>
+        }
+      </div>
+
+      <div class="inline-form" style="margin-top: 1rem;">
+        <div class="form-group" style="flex: 0 0 140px;">
+          <label>Seed</label>
+          <input type="number" [(ngModel)]="seed" name="seed" />
+        </div>
+        <button type="button" class="btn btn-primary" [disabled]="!selectedMapId || loadingWorld()"
+                (click)="startGame(mapById(selectedMapId!))">
+          {{ loadingWorld() ? 'Génération du monde…' : 'Commencer' }}
+        </button>
+      </div>
+    }
+  } @else {
+    <div class="play-wrap">
+      <div id="phaser-container"></div>
+
+      <div class="play-overlay">
+        <div class="play-overlay-top">
+          <button type="button" class="btn btn-secondary btn-sm" (click)="quit()">Quitter</button>
+          <p class="hint">
+            Déplacement : flèches / WASD — Saut : espace — Miner : clic gauche maintenu — Poser : clic droit
+          </p>
+        </div>
+
+        @if (message()) { <div class="play-toast">{{ message() }}</div> }
+
+        @if (miningProgress(); as p) {
+          <div class="play-mining">
+            <span>{{ miningBlockName() }}</span>
+            <div class="play-mining-bar"><div class="play-mining-bar-fill" [style.width.%]="p * 100"></div></div>
+          </div>
+        }
+
+        <div class="play-inventory">
+          @for (entry of inventory(); track entry.itemId) {
+            <button type="button" class="play-inventory-item" [class.selected]="selectedBlockId() === entry.itemId"
+                    [disabled]="entry.category !== 'block'" (click)="selectInventoryItem(entry)">
+              <span>{{ entry.name }}</span>
+              <span class="play-inventory-qty">×{{ entry.quantity }}</span>
+            </button>
+          }
+          @if (inventory().length === 0) {
+            <p class="hint">Inventaire vide — minez un block pour commencer.</p>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

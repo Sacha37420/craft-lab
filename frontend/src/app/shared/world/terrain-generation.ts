@@ -1,10 +1,11 @@
 /**
- * Aperçu de génération de terrain (Lot 4, cahier des charges 1.9, point 1) :
- * prototype de l'algorithme de génération procédurale par palier de
- * profondeur, uniquement pour valider à l'œil le critère d'acceptation
- * (« filons visuellement cohérents entre paliers adjacents ») — l'algorithme
- * définitif utilisé en jeu (Lot 6) n'est pas figé ici, cf. cahier des
- * charges section 7.
+ * Génération de terrain par bruit 2D (Lot 4, cahier des charges 1.9, point
+ * 1 ; réutilisé tel quel comme générateur du monde réel au Lot 6 — le
+ * prototype de l'aperçu s'est avéré satisfaire directement le critère
+ * d'acceptation, pas de raison d'en écrire un second). Utilisé à la fois par
+ * l'aperçu de la page Cartes (petite largeur, jamais rejoué) et par la page
+ * Jouer (grille pleine taille, générée une fois au lancement d'une partie
+ * puis mutée localement au fil du minage/de la pose de blocks).
  *
  * Bruit de valeur 2D (pas de dépendance externe — mulberry32 + interpolation
  * lissée) : UN champ de bruit continu par « slot » (vide + chaque type de
@@ -87,6 +88,9 @@ export function colorForBlockId(id: number): string {
 }
 
 const NOISE_SCALE = 0.15; // plus petit = filons plus larges/étalés
+
+/** Hauteur (en cases) d'un palier — partagée par l'aperçu et le monde réel, pour qu'ils restent visuellement cohérents. */
+export const ROWS_PER_TIER = 10;
 
 export function generateTerrainPreview(
   seed: number, width: number, tiers: TierRules[], rowsPerTier: number,

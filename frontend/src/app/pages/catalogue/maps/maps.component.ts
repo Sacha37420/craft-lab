@@ -6,19 +6,20 @@ import {
   ApiService, CatalogueItem, CatalogueSuggestion, DepthTier, DepthTierBlockRate, DepthTierMonsterSpawn, GameMap, Monster,
 } from '../../../core/api.service';
 import { TerrainPreviewComponent } from './terrain-preview.component';
-import { colorForBlockId, generateTerrainPreview, GeneratedCell, TierRules } from './terrain-generation';
+import {
+  colorForBlockId, generateTerrainPreview, GeneratedCell, ROWS_PER_TIER, TierRules,
+} from '../../../shared/world/terrain-generation';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 
-const ROWS_PER_TIER = 10;
 const PREVIEW_WIDTH = 80;
 
 /**
  * Cartes (cahier des charges 1.9) — une carte n'est pas un plan de blocks
  * mais un jeu de règles par palier de profondeur (DepthTier). L'aperçu de
- * génération (bruit 2D, cf. terrain-generation.ts) sert uniquement à
+ * génération (bruit 2D, cf. shared/world/terrain-generation.ts) sert à
  * vérifier à l'œil le critère d'acceptation du Lot 4 (filons cohérents
- * entre paliers adjacents) — ce n'est PAS le moteur de génération du jeu
- * (Lot 6), qui tournera côté client à partir des mêmes règles + un seed.
+ * entre paliers adjacents) — c'est le même générateur qui produit le monde
+ * réel joué (Lot 6, page Jouer), avec une largeur bien plus grande.
  */
 @Component({
   selector: 'app-maps',

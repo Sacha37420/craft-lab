@@ -24,6 +24,10 @@ export const routes: Routes = [
   { path: 'catalogue/monstres',      component: MonstersComponent },
   { path: 'catalogue/cartes',        component: MapsComponent },
   { path: 'catalogue/portails',      component: PortalsComponent },
+  {
+    path: 'jouer',
+    loadComponent: () => import('./pages/play/play.component').then(m => m.PlayComponent),
+  },
   { path: 'parametrage', component: ParametrageComponent },
   { path: '**',      redirectTo: '' },
 ];

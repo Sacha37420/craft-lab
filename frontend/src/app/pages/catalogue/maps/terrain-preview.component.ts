@@ -1,5 +1,5 @@
 import { AfterViewInit, Component, ElementRef, input, OnChanges, ViewChild } from '@angular/core';
-import { GeneratedCell } from './terrain-generation';
+import { GeneratedCell } from '../../../shared/world/terrain-generation';
 
 const CELL_SIZE = 6;
 

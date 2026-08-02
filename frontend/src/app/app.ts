@@ -30,6 +30,7 @@ export class AppComponent {
 
   readonly navEntries: NavEntry[] = [
     { kind: 'link', path: '/',        label: 'Accueil', abbr: 'Ac', exact: true },
+    { kind: 'link', path: '/jouer',   label: 'Jouer',    abbr: 'Jo' },
     { kind: 'section', label: 'Catalogue' },
     { kind: 'link', path: '/catalogue/blocks',       label: 'Blocks',              abbr: 'Bl' },
     { kind: 'link', path: '/catalogue/armes',        label: 'Armes',               abbr: 'Ar' },
