@@ -1,0 +1,90 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Portails</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Nouveau portail</button>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="catalogue-grid">
+      @for (item of items(); track item.id) {
+        <div class="catalogue-card">
+          <div class="catalogue-card-header">
+            <strong>{{ item.name }}</strong>
+          </div>
+          <p class="catalogue-card-desc">{{ item.description || '—' }}</p>
+          <p class="hint">
+            Cadre {{ item.frame_pattern.width }}×{{ item.frame_pattern.height }} —
+            destination : {{ item.destination_map_name || '—' }}
+          </p>
+          <div class="catalogue-card-actions">
+            <button class="btn btn-secondary btn-sm" (click)="openEdit(item)">Modifier</button>
+            <button class="btn btn-danger btn-sm" (click)="delete(item)">Supprimer</button>
+          </div>
+        </div>
+      }
+      @if (items().length === 0) {
+        <p class="empty-state">Aucun portail défini.</p>
+      }
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editing() ? 'Modifier' : 'Nouveau' }} portail</h3>
+
+      <app-ai-suggest-panel category="portal" [partial]="form" (apply)="onAiSuggestion($event)" />
+
+      <form (ngSubmit)="save()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="form.name" name="name" required />
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="form.description" name="description"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Carte de destination</label>
+          <select [(ngModel)]="form.destination_map" name="destinationMap">
+            <option [ngValue]="null">— Aucune —</option>
+            @for (m of gameMaps(); track m.id) {
+              <option [ngValue]="m.id">{{ m.name }}</option>
+            }
+          </select>
+        </div>
+
+        <h4>Cadre (rectangle d'un seul type de block)</h4>
+        <div class="inline-form">
+          <div class="form-group" style="flex: 0 0 110px;">
+            <label>Largeur</label>
+            <input type="number" min="1" [(ngModel)]="frameWidth" name="frameWidth" />
+          </div>
+          <div class="form-group" style="flex: 0 0 110px;">
+            <label>Hauteur</label>
+            <input type="number" min="1" [(ngModel)]="frameHeight" name="frameHeight" />
+          </div>
+          <div class="form-group">
+            <label>Block du cadre</label>
+            <select [(ngModel)]="frameBlock" name="frameBlock">
+              <option [ngValue]="null">— Choisir —</option>
+              @for (b of blocks(); track b.id) {
+                <option [ngValue]="b.id">{{ b.name }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

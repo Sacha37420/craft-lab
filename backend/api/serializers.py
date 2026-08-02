@@ -16,6 +16,7 @@ from .models import (
     Monster,
     MonsterDrop,
     MonsterSkill,
+    Portal,
     Projectile,
     RecipeIngredient,
     StatusEffect,
@@ -326,3 +327,26 @@ class DepthTierSerializer(serializers.ModelSerializer):
     class Meta:
         model = DepthTier
         fields = ['id', 'game_map', 'depth_index', 'void_rate']
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 5 : portails
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class PortalSerializer(serializers.ModelSerializer):
+    """
+    CRUD direct (comme GameMap/DepthTier — Portal n'est pas un Item). Pas
+    d'icône (cahier des charges section 2 : l'assistant image couvre
+    objets/blocks/monstres, pas cartes/portails) — seule la suggestion IA
+    texte s'applique ici (cf. catalogue_ai.py, spec 'portal').
+    """
+
+    destination_map_name = serializers.CharField(source='destination_map.name', read_only=True, default=None)
+
+    class Meta:
+        model = Portal
+        fields = [
+            'id', 'name', 'description', 'frame_pattern', 'destination_map',
+            'destination_map_name', 'created_at', 'updated_at',
+        ]

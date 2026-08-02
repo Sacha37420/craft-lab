@@ -34,6 +34,9 @@
   <div class="modal-backdrop" (click)="close()">
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>{{ editingMap() ? 'Modifier' : 'Nouvelle' }} carte</h3>
+
+      <app-ai-suggest-panel category="map" [partial]="mapForm" (apply)="onAiSuggestion($event)" />
+
       <form (ngSubmit)="saveMap()">
         <div class="form-group">
           <label>Nom *</label>

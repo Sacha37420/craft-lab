@@ -10,8 +10,8 @@ interface EnvWindow {
 export type ItemCategory = 'block' | 'weapon' | 'projectile' | 'artifact' | 'tool';
 export type CatalogueCategoryPath = 'weapons' | 'projectiles' | 'artifacts' | 'tools' | 'blocks' | 'monsters';
 export type CombatStyle = 'melee' | 'ranged' | 'magic' | 'summon';
-/** Catégories couvertes par l'assistant IA texte (Lot 2 + Lot 4) — pas de suggestion pour cartes/portails. */
-export type SuggestCategory = ItemCategory | 'monster';
+/** Catégories couvertes par l'assistant IA texte (Lot 2 + Lot 4 + Lot 5). */
+export type SuggestCategory = ItemCategory | 'monster' | 'map' | 'portal';
 
 // ── Catalogue — Lot 1 ─────────────────────────────────────────────────────
 
@@ -153,6 +153,27 @@ export interface DepthTierMonsterSpawn {
   monster: number | null;
   monster_name?: string;
   spawn_chance: number;
+}
+
+// ── Portails — Lot 5 (1.10) ───────────────────────────────────────────────
+
+/** Cadre rectangulaire d'un seul type de block — seule forme actuellement supportée côté backend. */
+export interface PortalFramePattern {
+  shape: 'frame';
+  width: number;
+  height: number;
+  block: number | null;
+}
+
+export interface Portal {
+  id?: number;
+  name: string;
+  description?: string;
+  frame_pattern: PortalFramePattern;
+  destination_map: number | null;
+  destination_map_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // ── Assistant IA — Lot 2 (texte) / Lot 3 (image) ─────────────────────────
@@ -479,5 +500,20 @@ export class ApiService {
   }
   removeDepthTierMonsterSpawn(tierId: number, spawnId: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/api/depth-tiers/${tierId}/monster-spawns/${spawnId}/`);
+  }
+
+  // ── Portails (1.10) ───────────────────────────────────────────────────────
+
+  getPortals(): Observable<Portal[]> {
+    return this.http.get<Portal[]>(`${this.base}/api/portals/`);
+  }
+  createPortal(data: Partial<Portal>): Observable<Portal> {
+    return this.http.post<Portal>(`${this.base}/api/portals/`, data);
+  }
+  updatePortal(id: number, data: Partial<Portal>): Observable<Portal> {
+    return this.http.patch<Portal>(`${this.base}/api/portals/${id}/`, data);
+  }
+  deletePortal(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/portals/${id}/`);
   }
 }

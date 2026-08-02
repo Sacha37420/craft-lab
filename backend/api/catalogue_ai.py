@@ -10,14 +10,15 @@ frontend de l'appliquer (ou non) au formulaire avant un enregistrement
 explicite de l'utilisateur — même principe que l'assistant de robot-lab.
 """
 from .ai_client import complete_json
-from .models import Artifact, Block, Monster, Projectile, Tool, Weapon
+from .models import Artifact, Block, GameMap, Monster, Portal, Projectile, Tool, Weapon
 
 # Pour chaque catégorie éditable : les champs de stats que l'IA peut
 # proposer, leur documentation (injectée dans le prompt) et le sous-schéma
-# JSON correspondant. Armes/projectiles/artefacts/outils/blocks/monstres —
-# cartes/portails n'ont pas de suggestion IA (pas de « stats » simples à
-# proposer, cf. to_do_craft_lab.md Lot 4 : la carte est un jeu de règles par
-# palier, pas une entité avec nom/description/stats comparable aux autres).
+# JSON correspondant. Cahier des charges section 2 : « objet, block, monstre,
+# carte, portail » — les 9 catégories ci-dessous. Carte/portail suivent le
+# même schéma vide que artefact (nom+description seulement) : une GameMap
+# est un jeu de règles par palier, pas une entité à « stats » directes ; un
+# Portal a un cadre (frame_pattern), pas un schéma à proposer par l'IA.
 CATEGORY_SPECS = {
     'block': {
         'label': 'block',
@@ -105,6 +106,30 @@ CATEGORY_SPECS = {
             'attack_rate': {'type': 'number'},
         },
         'required': ['level', 'detection_range', 'attack_type', 'attack_damage', 'attack_rate'],
+    },
+    'map': {
+        'label': 'carte',
+        'model': GameMap,
+        'standalone': True,
+        'fields_doc': (
+            "Une carte n'a pas de stats directes ici — seuls le nom et la "
+            "description sont à proposer (ses règles de génération par palier "
+            "se configurent séparément, une fois la carte créée)."
+        ),
+        'schema_props': {},
+        'required': [],
+    },
+    'portal': {
+        'label': 'portail',
+        'model': Portal,
+        'standalone': True,
+        'fields_doc': (
+            "Un portail n'a pas de stats directes ici — seuls le nom et la "
+            "description sont à proposer (son cadre de blocks et sa carte de "
+            "destination se configurent séparément)."
+        ),
+        'schema_props': {},
+        'required': [],
     },
 }
 

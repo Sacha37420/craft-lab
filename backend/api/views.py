@@ -29,6 +29,7 @@ from .models import (
     Monster,
     MonsterDrop,
     MonsterSkill,
+    Portal,
     Projectile,
     RecipeIngredient,
     StatusEffect,
@@ -48,6 +49,7 @@ from .serializers import (
     DepthTierMonsterSpawnSerializer,
     DepthTierSerializer,
     GameMapSerializer,
+    PortalSerializer,
     ItemSerializer,
     MonsterDropSerializer,
     MonsterSerializer,
@@ -553,3 +555,18 @@ class DepthTierViewSet(viewsets.ModelViewSet):
         spawn = get_object_or_404(DepthTierMonsterSpawn, pk=spawn_id, depth_tier=tier)
         spawn.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 5 : portails
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class PortalViewSet(viewsets.ModelViewSet):
+    """
+    CRUD direct (comme GameMap/DepthTier) — rien ne référence un Portal en
+    PROTECT dans le schéma actuel, pas de perform_destroy particulier requis.
+    """
+
+    queryset = Portal.objects.select_related('destination_map')
+    serializer_class = PortalSerializer

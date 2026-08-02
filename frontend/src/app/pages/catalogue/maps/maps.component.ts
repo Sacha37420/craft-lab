@@ -3,10 +3,11 @@ import { FormsModule } from '@angular/forms';
 import { PercentPipe } from '@angular/common';
 import { forkJoin } from 'rxjs';
 import {
-  ApiService, CatalogueItem, DepthTier, DepthTierBlockRate, DepthTierMonsterSpawn, GameMap, Monster,
+  ApiService, CatalogueItem, CatalogueSuggestion, DepthTier, DepthTierBlockRate, DepthTierMonsterSpawn, GameMap, Monster,
 } from '../../../core/api.service';
 import { TerrainPreviewComponent } from './terrain-preview.component';
 import { colorForBlockId, generateTerrainPreview, GeneratedCell, TierRules } from './terrain-generation';
+import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 
 const ROWS_PER_TIER = 10;
 const PREVIEW_WIDTH = 80;
@@ -22,7 +23,7 @@ const PREVIEW_WIDTH = 80;
 @Component({
   selector: 'app-maps',
   standalone: true,
-  imports: [FormsModule, PercentPipe, TerrainPreviewComponent],
+  imports: [FormsModule, PercentPipe, TerrainPreviewComponent, AiSuggestPanelComponent],
   templateUrl: './maps.component.html',
 })
 export class MapsComponent implements OnInit {
@@ -83,6 +84,10 @@ export class MapsComponent implements OnInit {
     this.editingMap.set(item);
     this.error.set(null);
     this.showMapModal.set(true);
+  }
+
+  onAiSuggestion(s: CatalogueSuggestion): void {
+    this.mapForm = { ...this.mapForm, name: s.name, description: s.description };
   }
 
   saveMap(): void {

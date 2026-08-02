@@ -13,6 +13,7 @@ from .views import (
     ItemViewSet,
     MeView,
     MonsterViewSet,
+    PortalViewSet,
     ProjectileViewSet,
     StatusEffectViewSet,
     ToolViewSet,
@@ -31,6 +32,7 @@ router.register('blocks', BlockViewSet, basename='block')
 router.register('monsters', MonsterViewSet, basename='monster')
 router.register('game-maps', GameMapViewSet, basename='game-map')
 router.register('depth-tiers', DepthTierViewSet, basename='depth-tier')
+router.register('portals', PortalViewSet, basename='portal')
 
 urlpatterns = [
     path('me/',          MeView.as_view()),

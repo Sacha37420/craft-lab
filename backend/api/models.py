@@ -572,13 +572,17 @@ class Portal(models.Model):
 
     name = models.CharField(max_length=200, unique=True)
     description = models.TextField(blank=True)
-    # Composition reconnue (quels blocks, arrangés comment) — structure exacte
-    # du pattern laissée au Lot 5 (Portails) ; JSON libre pour l'instant, ex :
-    # {"shape": "frame", "width": 4, "height": 5, "block": <Block.item_id>}.
+    # Composition reconnue (quels blocks, arrangés comment) — cadre rectangulaire
+    # d'un seul type de block (même principe qu'un portail Minecraft), seule forme
+    # couverte au Lot 5. {"shape": "frame", "width": <int>, "height": <int>,
+    # "block": <Item.id, catégorie block>}. Une forme non rectangulaire (Lot 6+)
+    # resterait un JSON différent, sans migration de schéma nécessaire.
     frame_pattern = models.JSONField(default=dict, blank=True)
     destination_map = models.ForeignKey(
         GameMap, on_delete=models.SET_NULL, null=True, blank=True, related_name='portals',
     )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'portals'
