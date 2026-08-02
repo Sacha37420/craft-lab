@@ -1,7 +1,8 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, CatalogueItem, Projectile } from '../../../core/api.service';
+import { ApiService, CatalogueItem, CatalogueSuggestion, Projectile } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
+import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 
 /**
  * Projectiles (cahier des charges 1.3) — utilisés par les armes à distance ;
@@ -11,7 +12,7 @@ import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-edit
 @Component({
   selector: 'app-projectiles',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent],
+  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent],
   templateUrl: './projectiles.component.html',
 })
 export class ProjectilesComponent implements OnInit {
@@ -67,6 +68,15 @@ export class ProjectilesComponent implements OnInit {
     this.detail.set(item);
     this.showDetail.set(true);
     this.refreshLookups();
+  }
+
+  onAiSuggestion(s: CatalogueSuggestion): void {
+    this.form = {
+      ...this.form,
+      name: s.name,
+      description: s.description,
+      damage: typeof s['damage'] === 'number' ? s['damage'] as number : this.form.damage,
+    };
   }
 
   save(): void {

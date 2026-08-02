@@ -1,0 +1,32 @@
+<div class="ai-panel">
+  <div class="ai-panel-controls">
+    <select [(ngModel)]="provider" name="aiProvider">
+      <option value="claude">Claude</option>
+      <option value="mistral">Mistral</option>
+    </select>
+    <button type="button" class="btn btn-secondary btn-sm" [disabled]="loading()" (click)="suggest()">
+      {{ loading() ? 'Réflexion…' : '✨ Suggérer avec l\'IA' }}
+    </button>
+  </div>
+
+  @if (needsConfig()) {
+    <p class="hint">
+      Aucune clé configurée pour ce fournisseur —
+      <a routerLink="/parametrage">configurez-la dans Paramétrage</a>.
+    </p>
+  } @else if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  @if (suggestion(); as s) {
+    <div class="ai-suggestion">
+      <p class="ai-suggestion-name">{{ s.name }}</p>
+      <p class="ai-suggestion-desc">{{ s.description }}</p>
+      <p class="hint">{{ s.rationale }}</p>
+      <div class="ai-panel-actions">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="dismiss()">Ignorer</button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="applySuggestion()">Appliquer au formulaire</button>
+      </div>
+    </div>
+  }
+</div>

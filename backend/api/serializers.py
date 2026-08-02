@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import (
+    AIProviderConfig,
     Artifact,
     ArtifactEffect,
     Block,
@@ -15,6 +16,21 @@ from .models import (
     Weapon,
     WeaponProjectile,
 )
+
+
+class AIProviderConfigSerializer(serializers.ModelSerializer):
+    """La clé API est en écriture seule : jamais renvoyée déchiffrée au frontend."""
+
+    api_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    has_key = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AIProviderConfig
+        fields = ['provider', 'api_key', 'model_name', 'has_key', 'updated_at']
+        read_only_fields = ['provider', 'updated_at']
+
+    def get_has_key(self, obj) -> bool:
+        return bool(obj.api_key)
 
 
 class DepartmentSerializer(serializers.ModelSerializer):

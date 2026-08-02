@@ -1,13 +1,14 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, CatalogueItem, Tool } from '../../../core/api.service';
+import { ApiService, CatalogueItem, CatalogueSuggestion, Tool } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
+import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 
 /** Outils (cahier des charges 1.5) — hache et pioche : puissance + vitesse de cassage. */
 @Component({
   selector: 'app-tools',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent],
+  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent],
   templateUrl: './tools.component.html',
 })
 export class ToolsComponent implements OnInit {
@@ -64,6 +65,17 @@ export class ToolsComponent implements OnInit {
     this.detail.set(item);
     this.showDetail.set(true);
     this.refreshLookups();
+  }
+
+  onAiSuggestion(s: CatalogueSuggestion): void {
+    this.form = {
+      ...this.form,
+      name: s.name,
+      description: s.description,
+      tool_type: (s['tool_type'] as Tool['tool_type']) ?? this.form.tool_type,
+      power: typeof s['power'] === 'number' ? s['power'] as number : this.form.power,
+      speed: typeof s['speed'] === 'number' ? s['speed'] as number : this.form.speed,
+    };
   }
 
   save(): void {

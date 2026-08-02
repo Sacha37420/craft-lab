@@ -39,6 +39,7 @@ export class AppComponent {
     { kind: 'link', path: '/catalogue/effets-statut', label: 'Effets de statut',   abbr: 'Es' },
     { kind: 'section', label: 'Compte' },
     { kind: 'link', path: '/profile', label: 'Profil',  abbr: 'Pr' },
+    { kind: 'link', path: '/parametrage', label: 'Paramétrage', abbr: 'Pa' },
   ];
 
   @ViewChild('closeBtn') private closeBtnRef?: ElementRef<HTMLButtonElement>;

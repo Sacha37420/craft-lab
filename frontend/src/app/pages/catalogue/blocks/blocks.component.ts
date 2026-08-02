@@ -1,8 +1,9 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PercentPipe } from '@angular/common';
-import { ApiService, Block, BlockDrop, CatalogueItem, StatusEffect } from '../../../core/api.service';
+import { ApiService, Block, BlockDrop, CatalogueItem, CatalogueSuggestion, StatusEffect } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
+import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 
 /**
  * Blocks de base et liquides (cahier des charges 1.6/1.7) — un seul modèle :
@@ -12,7 +13,7 @@ import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-edit
 @Component({
   selector: 'app-blocks',
   standalone: true,
-  imports: [FormsModule, PercentPipe, RecipeEditorComponent],
+  imports: [FormsModule, PercentPipe, RecipeEditorComponent, AiSuggestPanelComponent],
   templateUrl: './blocks.component.html',
 })
 export class BlocksComponent implements OnInit {
@@ -75,6 +76,15 @@ export class BlocksComponent implements OnInit {
     this.editing.set(item);
     this.error.set(null);
     this.showModal.set(true);
+  }
+
+  onAiSuggestion(s: CatalogueSuggestion): void {
+    this.form = {
+      ...this.form,
+      name: s.name,
+      description: s.description,
+      hardness: typeof s['hardness'] === 'number' ? s['hardness'] as number : this.form.hardness,
+    };
   }
 
   openDetail(item: Block): void {

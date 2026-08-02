@@ -7,6 +7,7 @@ import { ProjectilesComponent } from './pages/catalogue/projectiles/projectiles.
 import { ArtifactsComponent } from './pages/catalogue/artifacts/artifacts.component';
 import { ToolsComponent } from './pages/catalogue/tools/tools.component';
 import { StatusEffectsComponent } from './pages/catalogue/status-effects/status-effects.component';
+import { ParametrageComponent } from './pages/parametrage/parametrage.component';
 
 export const routes: Routes = [
   { path: '',        component: HomeComponent },
@@ -17,5 +18,6 @@ export const routes: Routes = [
   { path: 'catalogue/artefacts',     component: ArtifactsComponent },
   { path: 'catalogue/outils',        component: ToolsComponent },
   { path: 'catalogue/effets-statut', component: StatusEffectsComponent },
+  { path: 'parametrage', component: ParametrageComponent },
   { path: '**',      redirectTo: '' },
 ];

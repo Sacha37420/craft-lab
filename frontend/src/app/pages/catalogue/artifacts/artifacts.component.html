@@ -34,6 +34,9 @@
   <div class="modal-backdrop" (click)="close()">
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>{{ editing() ? 'Modifier' : 'Nouvel' }} artefact</h3>
+
+      <app-ai-suggest-panel category="artifact" [partial]="form" (apply)="onAiSuggestion($event)" />
+
       <form (ngSubmit)="save()">
         <div class="form-group">
           <label>Nom *</label>

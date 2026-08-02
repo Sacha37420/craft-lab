@@ -1,13 +1,14 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, CatalogueItem, Weapon, WeaponProjectileLink } from '../../../core/api.service';
+import { ApiService, CatalogueItem, CatalogueSuggestion, Weapon, WeaponProjectileLink } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
+import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 
 /** Armes (cahier des charges 1.2) — sous-catégories mêlée/distance/magique/invocation. */
 @Component({
   selector: 'app-weapons',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent],
+  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent],
   templateUrl: './weapons.component.html',
 })
 export class WeaponsComponent implements OnInit {
@@ -62,6 +63,19 @@ export class WeaponsComponent implements OnInit {
     this.editing.set(item);
     this.error.set(null);
     this.showModal.set(true);
+  }
+
+  onAiSuggestion(s: CatalogueSuggestion): void {
+    const style = s['style'] as Weapon['style'] | undefined;
+    this.form = {
+      ...this.form,
+      name: s.name,
+      description: s.description,
+      style: style ?? this.form.style,
+      damage: typeof s['damage'] === 'number' ? s['damage'] as number : this.form.damage,
+      attack_range: typeof s['attack_range'] === 'number' ? s['attack_range'] as number : this.form.attack_range,
+      attack_rate: typeof s['attack_rate'] === 'number' ? s['attack_rate'] as number : this.form.attack_rate,
+    };
   }
 
   openDetail(item: Weapon): void {

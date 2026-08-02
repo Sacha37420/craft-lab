@@ -2,11 +2,15 @@ from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import catalogue_ai
+from .ai_client import AIError, AINotConfigured
 from .models import (
+    PROVIDER_CHOICES,
+    AIProviderConfig,
     Artifact,
     ArtifactEffect,
     Block,
@@ -22,6 +26,7 @@ from .models import (
     WeaponProjectile,
 )
 from .serializers import (
+    AIProviderConfigSerializer,
     ArtifactEffectSerializer,
     ArtifactSerializer,
     BlockDropSerializer,
@@ -36,6 +41,8 @@ from .serializers import (
     WeaponProjectileSerializer,
     WeaponSerializer,
 )
+
+_VALID_PROVIDERS = {key for key, _ in PROVIDER_CHOICES}
 
 
 class MeView(APIView):
@@ -80,6 +87,67 @@ class UserListView(generics.ListAPIView):
 
     queryset         = UserRecord.objects.select_related('department')
     serializer_class = UserRecordSerializer
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 2 : assistant IA texte (cahier des charges section 2)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class AIProviderConfigView(APIView):
+    """
+    GET/PUT /api/ai-config/<provider>/ — configuration IA de l'utilisateur
+    courant pour un fournisseur donné (claude ou mistral). Repris tel quel du
+    patron robot-lab.
+    """
+
+    def _get_or_create(self, request, provider):
+        if provider not in _VALID_PROVIDERS:
+            raise NotFound(f"Fournisseur inconnu : '{provider}'.")
+        config, _ = AIProviderConfig.objects.get_or_create(
+            owner_email=request.user.email, provider=provider,
+        )
+        return config
+
+    def get(self, request, provider):
+        config = self._get_or_create(request, provider)
+        return Response(AIProviderConfigSerializer(config).data)
+
+    def put(self, request, provider):
+        config = self._get_or_create(request, provider)
+        serializer = AIProviderConfigSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(AIProviderConfigSerializer(config).data)
+
+
+class CatalogueAssistantView(APIView):
+    """
+    POST /api/catalogue-assistant/suggest/ — suggestion IA (nom, description,
+    stats) pour la catégorie et les champs déjà saisis fournis dans le corps
+    (`{category, provider, partial}`). Ne persiste rien : c'est au frontend
+    d'appliquer, ou non, la suggestion au formulaire avant un enregistrement
+    explicite (même principe que l'assistant de robot-lab).
+    """
+
+    def post(self, request):
+        category = request.data.get('category')
+        provider = request.data.get('provider')
+        partial = request.data.get('partial') or {}
+
+        if category not in catalogue_ai.CATEGORY_SPECS:
+            raise NotFound(f"Catégorie inconnue : '{category}'.")
+        if provider not in _VALID_PROVIDERS:
+            raise NotFound(f"Fournisseur inconnu : '{provider}'.")
+
+        try:
+            result = catalogue_ai.suggest(request.user.email, provider, category, partial)
+        except AINotConfigured as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_409_CONFLICT)
+        except AIError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response(result)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

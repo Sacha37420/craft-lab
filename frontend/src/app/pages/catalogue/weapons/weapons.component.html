@@ -40,6 +40,9 @@
   <div class="modal-backdrop" (click)="close()">
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>{{ editing() ? 'Modifier' : 'Nouvelle' }} arme</h3>
+
+      <app-ai-suggest-panel category="weapon" [partial]="form" (apply)="onAiSuggestion($event)" />
+
       <form (ngSubmit)="save()">
         <div class="form-group">
           <label>Nom *</label>

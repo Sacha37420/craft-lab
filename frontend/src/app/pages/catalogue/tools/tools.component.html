@@ -38,6 +38,9 @@
   <div class="modal-backdrop" (click)="close()">
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>{{ editing() ? 'Modifier' : 'Nouvel' }} outil</h3>
+
+      <app-ai-suggest-panel category="tool" [partial]="form" (apply)="onAiSuggestion($event)" />
+
       <form (ngSubmit)="save()">
         <div class="form-group">
           <label>Nom *</label>

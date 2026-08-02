@@ -1,5 +1,36 @@
 from django.db import models
 
+from .fields import EncryptedTextField
+
+PROVIDER_CHOICES = [
+    ('claude', 'Claude'),
+    ('mistral', 'Mistral'),
+]
+
+
+class AIProviderConfig(models.Model):
+    """
+    Clé API d'un fournisseur IA, propre à un utilisateur (Lot 2, cahier des
+    charges section 2) — repris tel quel du patron robot-lab.
+
+    Une config par (utilisateur, fournisseur) : chacun garde sa propre clé
+    Claude et/ou Mistral, jamais de clé partagée pour tout le lab.
+    """
+
+    owner_email = models.EmailField()
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
+    api_key = EncryptedTextField(blank=True)
+    model_name = models.CharField(max_length=100, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ai_provider_configs'
+        unique_together = [('owner_email', 'provider')]
+        ordering = ['provider']
+
+    def __str__(self) -> str:
+        return f'{self.owner_email} — {self.provider}'
+
 
 class Department(models.Model):
     """Département ou équipe de l'organisation."""

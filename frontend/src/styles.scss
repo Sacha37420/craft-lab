@@ -410,3 +410,45 @@ code, pre, .mono { font-family: var(--font-mono); }
     justify-content: flex-end;
   }
 }
+
+/* ── Assistant IA du catalogue (Lot 2) ───────────────────────────────────
+   Bandeau autonome, embarqué dans chaque formulaire d'édition (cf.
+   AiSuggestPanelComponent) — jamais dans une modale à part. */
+.ai-panel {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.ai-panel-controls {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+
+  select { max-width: 140px; min-height: 36px; }
+}
+
+.ai-panel-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+}
+
+.ai-suggestion {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+
+  .ai-suggestion-name {
+    font-weight: 700;
+    margin: 0 0 var(--space-1);
+  }
+
+  .ai-suggestion-desc {
+    font-size: var(--text-sm);
+    margin: 0 0 var(--space-2);
+  }
+}

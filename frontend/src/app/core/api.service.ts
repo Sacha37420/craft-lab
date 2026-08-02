@@ -94,6 +94,24 @@ export interface Block extends CatalogueEntityBase {
   contact_status_effect_name?: string | null;
 }
 
+// ── Assistant IA — Lot 2 ─────────────────────────────────────────────────
+
+export type AIProvider = 'claude' | 'mistral';
+
+export interface AIProviderConfig {
+  provider: AIProvider;
+  model_name: string;
+  has_key: boolean;
+  updated_at: string;
+}
+
+export interface CatalogueSuggestion {
+  name: string;
+  description: string;
+  rationale: string;
+  [stat: string]: unknown;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
@@ -251,5 +269,21 @@ export class ApiService {
   }
   removeBlockDrop(blockId: number, dropId: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/api/blocks/${blockId}/drops/${dropId}/`);
+  }
+
+  // ── Assistant IA — Lot 2 ──────────────────────────────────────────────────
+
+  getAiConfig(provider: AIProvider): Observable<AIProviderConfig> {
+    return this.http.get<AIProviderConfig>(`${this.base}/api/ai-config/${provider}/`);
+  }
+  saveAiConfig(provider: AIProvider, payload: { api_key?: string; model_name?: string }): Observable<AIProviderConfig> {
+    return this.http.put<AIProviderConfig>(`${this.base}/api/ai-config/${provider}/`, payload);
+  }
+  suggestCatalogueEntity(
+    category: ItemCategory, provider: AIProvider, partial: Record<string, unknown>,
+  ): Observable<CatalogueSuggestion> {
+    return this.http.post<CatalogueSuggestion>(
+      `${this.base}/api/catalogue-assistant/suggest/`, { category, provider, partial },
+    );
   }
 }

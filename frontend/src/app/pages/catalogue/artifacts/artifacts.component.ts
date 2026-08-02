@@ -1,8 +1,9 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { JsonPipe } from '@angular/common';
-import { Artifact, ArtifactEffect, ApiService, CatalogueItem } from '../../../core/api.service';
+import { Artifact, ArtifactEffect, ApiService, CatalogueItem, CatalogueSuggestion } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
+import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 
 const EFFECT_TYPES: { value: string; label: string }[] = [
   { value: 'hp_boost', label: 'PV' },
@@ -23,7 +24,7 @@ const EFFECT_TYPES: { value: string; label: string }[] = [
 @Component({
   selector: 'app-artifacts',
   standalone: true,
-  imports: [FormsModule, JsonPipe, RecipeEditorComponent],
+  imports: [FormsModule, JsonPipe, RecipeEditorComponent, AiSuggestPanelComponent],
   templateUrl: './artifacts.component.html',
 })
 export class ArtifactsComponent implements OnInit {
@@ -76,6 +77,10 @@ export class ArtifactsComponent implements OnInit {
     this.editing.set(item);
     this.error.set(null);
     this.showModal.set(true);
+  }
+
+  onAiSuggestion(s: CatalogueSuggestion): void {
+    this.form = { ...this.form, name: s.name, description: s.description };
   }
 
   openDetail(item: Artifact): void {
