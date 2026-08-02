@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8085:8000"
+      - "8097:8000"
     networks:
       - sso-net
       - dev-net
@@ -31,7 +31,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "4203:80"
+      - "4213:80"
     networks:
       - sso-net
     labels:
