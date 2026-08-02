@@ -41,12 +41,24 @@ interface LaunchContext {
   initialCharacter?: InitialCharacterState;
 }
 
+/** Un autre joueur connecté au même monde (Lot 8) — pour le petit roster affiché en jeu. */
+interface RemotePlayer {
+  id: string;
+  ownerEmail: string;
+}
+
 /**
  * Page Jouer (cahier des charges § 3 et § 6) — génère un monde réel à partir
  * des règles de la carte choisie (nouvelle partie) ou d'une sauvegarde
  * (Lot 7) et le rend jouable (déplacement, physique, minage/pose de blocks,
- * monstres, combat, craft) via Phaser. Solo côté simulation — la
- * synchronisation multijoueur reste le sujet du Lot 8.
+ * monstres, combat, craft) via Phaser. Une fois la partie lancée, se
+ * connecte au service relais (Lot 8a) pour diffuser/recevoir la position des
+ * autres joueurs et les changements de blocks en temps réel — GameScene ne
+ * parle jamais lui-même au réseau, cette classe lit son état (
+ * `getPlayerTransform`) et lui applique les mises à jour reçues
+ * (`applyRemoteMove`/`applyRemoteBlockChange`). Le relais est un confort, pas
+ * une dépendance dure : s'il est injoignable, la partie reste jouable en
+ * solo (aucun blocage, juste pas de synchronisation).
  */
 @Component({
   selector: 'app-play',
@@ -85,10 +97,14 @@ export class PlayComponent implements OnInit, OnDestroy {
   showCraft = signal(false);
   recipes: WorldRecipe[] = [];
 
+  remotePlayers = signal<RemotePlayer[]>([]);
+
   private game: Phaser.Game | null = null;
   private scene: GameScene | null = null;
   private messageTimeout?: ReturnType<typeof setTimeout>;
   private pendingLaunchTimeout?: ReturnType<typeof setTimeout>;
+  private relaySocket: WebSocket | null = null;
+  private moveIntervalId?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void {
     this.api.getGameMaps().subscribe({
@@ -198,7 +214,12 @@ export class PlayComponent implements OnInit, OnDestroy {
         const monsterSpawnsByTier = new Map<number, WorldMonsterSpawnRate[]>(
           detail.generation_rules.monsterSpawns.map(e => [e.depthIndex, e.spawns]),
         );
-        const initialCharacter: InitialCharacterState = {
+        // `created` = get_or_create vient de créer cette ligne (aucune sauvegarde antérieure) :
+        // (x=0, y=0) ne correspond à aucun endroit réel du monde — laisser GameScene retomber sur
+        // sa recherche de spawn normale plutôt que de "restaurer" une position bidon. Cas concret
+        // en multijoueur : un deuxième joueur qui rejoint un monde tout juste créé par un autre,
+        // avant sa première sauvegarde.
+        const initialCharacter: InitialCharacterState | undefined = character.created ? undefined : {
           hp: character.hp,
           positionX: character.position_x,
           positionY: character.position_y,
@@ -399,6 +420,11 @@ export class PlayComponent implements OnInit, OnDestroy {
           }),
           onMessage: text => this.zone.run(() => this.showMessage(text)),
           onHpChange: (hp, maxHp) => this.zone.run(() => { this.hp.set(hp); this.maxHp.set(maxHp); }),
+          onLocalBlockChange: (x, y, blockId) => {
+            if (this.relaySocket?.readyState === WebSocket.OPEN) {
+              this.relaySocket.send(JSON.stringify({ type: 'block-change', x, y, blockId }));
+            }
+          },
         });
         this.game = new Phaser.Game({
           type: Phaser.AUTO,
@@ -411,6 +437,88 @@ export class PlayComponent implements OnInit, OnDestroy {
         });
       });
     }, 0);
+
+    // worldId est toujours résolu à ce stade (soit repris tel quel dans onRecipesLoaded pour une
+    // reprise, soit rempli juste après la création du World pour une nouvelle partie) — jamais
+    // appelé avec worldId encore null.
+    this.connectRelay(ctx.worldId!);
+  }
+
+  // ── Multijoueur (Lot 8a) ──────────────────────────────────────────────────
+
+  /**
+   * Confort, pas dépendance dure : toute erreur ici (billet refusé, relais
+   * injoignable, WebSocket qui ne s'ouvre pas) laisse simplement la partie en
+   * solo — jamais de blocage ni de message d'erreur affiché pour ça, cf.
+   * docstring de la classe.
+   */
+  private connectRelay(worldId: number): void {
+    this.remotePlayers.set([]);
+    this.api.getRelayTicket(worldId).subscribe({
+      next: ({ ticket }) => {
+        const ws = new WebSocket(`${this.api.relayUrl}?ticket=${encodeURIComponent(ticket)}`);
+        this.relaySocket = ws;
+        ws.onmessage = ev => {
+          let msg: { type: string; id?: string; [k: string]: unknown };
+          try { msg = JSON.parse(ev.data); } catch { return; }
+          this.zone.run(() => this.handleRelayMessage(msg));
+        };
+        ws.onopen = () => this.startPositionBroadcast();
+        ws.onclose = () => { this.relaySocket = null; this.stopPositionBroadcast(); };
+        ws.onerror = () => { /* dégradation silencieuse en solo */ };
+      },
+      error: () => { /* dégradation silencieuse en solo */ },
+    });
+  }
+
+  private handleRelayMessage(msg: { type: string; id?: string; [k: string]: unknown }): void {
+    switch (msg.type) {
+      case 'welcome': {
+        const selfId = msg['selfId'] as string;
+        const players = (msg['players'] as { id: string; ownerEmail: string }[])
+          .filter(p => p.id !== selfId);
+        this.remotePlayers.set(players);
+        for (const p of players) this.scene?.addRemotePlayer(p.id, p.ownerEmail);
+        break;
+      }
+      case 'player-joined': {
+        const player = { id: msg.id!, ownerEmail: msg['ownerEmail'] as string };
+        this.remotePlayers.update(list => [...list, player]);
+        this.scene?.addRemotePlayer(player.id, player.ownerEmail);
+        break;
+      }
+      case 'player-left':
+        this.remotePlayers.update(list => list.filter(p => p.id !== msg.id));
+        this.scene?.removeRemotePlayer(msg.id!);
+        break;
+      case 'move':
+        this.scene?.applyRemoteMove(msg.id!, msg['x'] as number, msg['y'] as number, msg['flipX'] as boolean);
+        break;
+      case 'block-change':
+        this.scene?.applyRemoteBlockChange(msg['x'] as number, msg['y'] as number, msg['blockId'] as number | null);
+        break;
+      default:
+        break; // protocole ouvert à extension (Lot 8b : monstres/combat) — types inconnus ignorés
+    }
+  }
+
+  private startPositionBroadcast(): void {
+    this.stopPositionBroadcast();
+    this.moveIntervalId = setInterval(() => {
+      if (!this.scene || this.relaySocket?.readyState !== WebSocket.OPEN) return;
+      const t = this.scene.getPlayerTransform();
+      this.relaySocket.send(JSON.stringify({ type: 'move', x: t.x, y: t.y, flipX: t.flipX }));
+    }, 150);
+  }
+
+  private stopPositionBroadcast(): void {
+    if (this.moveIntervalId) { clearInterval(this.moveIntervalId); this.moveIntervalId = undefined; }
+  }
+
+  private disconnectRelay(): void {
+    this.stopPositionBroadcast();
+    if (this.relaySocket) { this.relaySocket.onclose = null; this.relaySocket.close(); this.relaySocket = null; }
+    this.remotePlayers.set([]);
   }
 
   selectInventoryItem(entry: InventoryEntry): void {
@@ -488,6 +596,7 @@ export class PlayComponent implements OnInit, OnDestroy {
 
   private destroyGame(): void {
     if (this.pendingLaunchTimeout) { clearTimeout(this.pendingLaunchTimeout); this.pendingLaunchTimeout = undefined; }
+    this.disconnectRelay();
     if (this.game) { this.game.destroy(true); this.game = null; }
     this.scene = null;
     this.worldId.set(null);

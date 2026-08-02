@@ -67,6 +67,9 @@ export interface GameSceneConfig {
   onMiningProgress: (progress: number | null, blockName: string | null) => void;
   onMessage: (text: string) => void;
   onHpChange: (hp: number, maxHp: number) => void;
+  /** Lot 8 — appelé pour un changement de bloc d'origine LOCALE (jamais pour un changement
+   * appliqué via applyRemoteBlockChange), pour que PlayComponent le diffuse aux autres joueurs. */
+  onLocalBlockChange?: (x: number, y: number, blockId: number | null) => void;
 }
 
 interface TileXY { x: number; y: number; }
@@ -122,6 +125,12 @@ export class GameScene extends Phaser.Scene {
   // getBlockDiff() au moment de sauvegarder ; le backend FUSIONNE plutôt que remplacer,
   // donc il n'y a pas besoin de préremplir avec le diff hérité.
   private blockDiff = new Map<string, number | null>();
+  /** true pendant applyRemoteBlockChange — évite de rediffuser un changement qu'on vient de recevoir. */
+  private applyingRemoteChange = false;
+
+  // Lot 8 — proxies visuels des autres joueurs connectés au même monde, purement affichage
+  // (pas de corps physique local : la position vient du relais, jamais simulée ici).
+  private remotePlayers = new Map<string, { sprite: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }>();
 
   private playerHp = PLAYER_MAX_HP;
   private equippedWeaponId: number | null = null;
@@ -165,6 +174,37 @@ export class GameScene extends Phaser.Scene {
       inventory: Object.fromEntries(this.inventory),
       equippedWeaponId: this.equippedWeaponId,
     };
+  }
+
+  // ── Multijoueur (Lot 8) — appelés par PlayComponent, jamais par cette classe elle-même ────
+
+  getPlayerTransform(): { x: number; y: number; flipX: boolean } {
+    return { x: this.player.x, y: this.player.y, flipX: this.player.flipX };
+  }
+
+  addRemotePlayer(id: string, label: string): void {
+    if (this.remotePlayers.has(id)) return;
+    const sprite = this.add.rectangle(this.player.x, this.player.y, 22, 38, 0x66aaff).setOrigin(0.5, 1);
+    const text = this.add.text(this.player.x, this.player.y - 46, label, {
+      fontSize: '12px', color: '#ffffff', backgroundColor: '#00000080', padding: { x: 4, y: 2 },
+    }).setOrigin(0.5, 1);
+    this.remotePlayers.set(id, { sprite, label: text });
+  }
+
+  removeRemotePlayer(id: string): void {
+    const entry = this.remotePlayers.get(id);
+    if (!entry) return;
+    entry.sprite.destroy();
+    entry.label.destroy();
+    this.remotePlayers.delete(id);
+  }
+
+  applyRemoteMove(id: string, x: number, y: number, flipX: boolean): void {
+    const entry = this.remotePlayers.get(id);
+    if (!entry) return;
+    entry.sprite.setPosition(x, y);
+    entry.sprite.setScale(flipX ? -1 : 1, 1);
+    entry.label.setPosition(x, y - 46);
   }
 
   override update(_time: number, delta: number): void {
@@ -372,6 +412,7 @@ export class GameScene extends Phaser.Scene {
     this.grid[y][x] = { kind: 'void', color: 'transparent' };
     this.layer.removeTileAt(x, y);
     this.blockDiff.set(`${x},${y}`, null);
+    if (!this.applyingRemoteChange) this.cfg.onLocalBlockChange?.(x, y, null);
   }
 
   private setCellBlock(x: number, y: number, blockId: number): void {
@@ -379,6 +420,16 @@ export class GameScene extends Phaser.Scene {
     this.grid[y][x] = { kind: 'block', blockId, blockName: def.name, color: def.color };
     this.layer.putTileAt(this.tileIndexByBlockId.get(blockId)!, x, y);
     this.blockDiff.set(`${x},${y}`, blockId);
+    if (!this.applyingRemoteChange) this.cfg.onLocalBlockChange?.(x, y, blockId);
+  }
+
+  /** Applique un changement de bloc reçu du relais (Lot 8) — même mutation que setCellVoid/
+   * setCellBlock (diff de sauvegarde inclus), mais sans rediffuser (évite un écho infini). */
+  applyRemoteBlockChange(x: number, y: number, blockId: number | null): void {
+    if (!this.grid[y]?.[x]) return;
+    this.applyingRemoteChange = true;
+    if (blockId == null) this.setCellVoid(x, y); else this.setCellBlock(x, y, blockId);
+    this.applyingRemoteChange = false;
   }
 
   // ── Déplacement ───────────────────────────────────────────────────────────

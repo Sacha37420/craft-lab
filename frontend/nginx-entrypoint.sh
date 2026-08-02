@@ -13,7 +13,8 @@ window.__env = {
   keycloakClientId: "${KEYCLOAK_CLIENT_ID}",
   apiUrl:           "https://${DOMAIN}/craft-lab-api",
   appUrl:           "https://${DOMAIN}/craft-lab/",
-  storageApiUrl:    "https://${DOMAIN}/storage-api"
+  storageApiUrl:    "https://${DOMAIN}/storage-api",
+  relayUrl:         "wss://${DOMAIN}/craft-lab-relay/ws"
 };
 JSEOF
 else
@@ -24,7 +25,8 @@ window.__env = {
   keycloakClientId: "${KEYCLOAK_CLIENT_ID}",
   apiUrl:           window.location.protocol + '//' + window.location.hostname + ':${PORT_BACKEND:-8000}',
   appUrl:           window.location.protocol + '//' + window.location.hostname + ':${PORT_FRONTEND:-4200}',
-  storageApiUrl:    window.location.protocol + '//' + window.location.hostname + ':${STORAGE_PORT_BACKEND:-8093}'
+  storageApiUrl:    window.location.protocol + '//' + window.location.hostname + ':${STORAGE_PORT_BACKEND:-8093}',
+  relayUrl:         (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.hostname + ':${PORT_RELAY:-8098}/ws'
 };
 JSEOF
 fi

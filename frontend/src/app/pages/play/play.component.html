@@ -73,6 +73,9 @@
           </button>
           <button type="button" class="btn btn-secondary btn-sm" (click)="toggleCraft()">Artisanat</button>
           <span class="hint">{{ worldName() }}</span>
+          @if (remotePlayers().length > 0) {
+            <span class="hint">— avec {{ remotePlayers().length }} autre(s) joueur(s) connecté(s)</span>
+          }
           <div class="play-hp">
             <span>PV {{ hp() }} / {{ maxHp() }}</span>
             <div class="play-hp-bar"><div class="play-hp-bar-fill" [style.width.%]="(hp() / maxHp()) * 100"></div></div>

@@ -38,3 +38,20 @@ services:
       caddy: "${DOMAIN}"
       caddy.handle_path: "/craft-lab/*"
       caddy.handle_path.reverse_proxy: "{{upstreams 80}}"
+
+  relay:
+    build: ./relay
+    container_name: craft-lab-relay
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BACKEND_INTERNAL_URL: http://craft-lab-backend:8000
+    ports:
+      - "${PORT_RELAY:-8098}:4310"
+    networks:
+      - sso-net
+      - dev-net
+    labels:
+      caddy: "${DOMAIN}"
+      caddy.handle_path: "/craft-lab-relay/*"
+      caddy.handle_path.reverse_proxy: "{{upstreams 4310}}"

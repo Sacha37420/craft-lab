@@ -5,7 +5,7 @@ import { KeycloakService } from './keycloak.service';
 import { TierRules } from '../shared/world/terrain-generation';
 
 interface EnvWindow {
-  __env?: { apiUrl?: string; storageApiUrl?: string };
+  __env?: { apiUrl?: string; storageApiUrl?: string; relayUrl?: string };
 }
 
 export type ItemCategory = 'block' | 'weapon' | 'projectile' | 'artifact' | 'tool';
@@ -212,6 +212,8 @@ export interface CharacterState {
   inventory: Record<string, number>;
   equipped_weapon_id: number | null;
   updated_at?: string;
+  /** Présent seulement en réponse du GET — cf. WorldViewSet.character côté backend. */
+  created?: boolean;
 }
 
 // ── Assistant IA — Lot 2 (texte) / Lot 3 (image) ─────────────────────────
@@ -251,6 +253,11 @@ export class ApiService {
   private get storageApiUrl(): string {
     return (window as unknown as EnvWindow).__env?.storageApiUrl
       ?? 'http://localhost:8093';
+  }
+
+  get relayUrl(): string {
+    return (window as unknown as EnvWindow).__env?.relayUrl
+      ?? 'ws://localhost:8098/ws';
   }
 
   /**
@@ -576,5 +583,9 @@ export class ApiService {
     worldId: number, payload: { block_diff?: Record<string, number | null>; character?: Partial<CharacterState> },
   ): Observable<{ saved: boolean }> {
     return this.http.post<{ saved: boolean }>(`${this.base}/api/worlds/${worldId}/save/`, payload);
+  }
+  /** Billet à usage unique pour ouvrir la connexion WebSocket vers le relais (Lot 8). */
+  getRelayTicket(worldId: number): Observable<{ ticket: string; world_id: number }> {
+    return this.http.post<{ ticket: string; world_id: number }>(`${this.base}/api/worlds/${worldId}/relay-ticket/`, {});
   }
 }

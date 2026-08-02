@@ -1,11 +1,13 @@
 import base64
 import binascii
 
+from django.conf import settings
 from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -33,6 +35,7 @@ from .models import (
     Portal,
     Projectile,
     RecipeIngredient,
+    RelayTicket,
     StatusEffect,
     Tool,
     UserRecord,
@@ -607,11 +610,22 @@ class WorldViewSet(viewsets.ModelViewSet):
         de l'utilisateur courant dans ce monde. PUT : le met à jour en entier
         (position/PV/inventaire/arme équipée) — utilisé par `save` côté client
         au moment de sauvegarder/quitter, jamais d'auto-save côté serveur.
+
+        Le GET renvoie aussi `created` : distingue « je viens de créer cette
+        ligne, ses valeurs par défaut (x=0, y=0) ne correspondent à rien de
+        réel » d'un vrai personnage sauvegardé à cette position précise.
+        Important en multijoueur (Lot 8) : un deuxième joueur qui rejoint un
+        monde tout juste créé par un autre, avant sa première sauvegarde,
+        n'a pas encore de ligne Character — sans ce indicateur le client
+        prendrait (0,0) pour une vraie position et y ferait apparaître le
+        joueur, au lieu de repasser par la recherche de spawn normale.
         """
         world = self.get_object()
-        char, _ = Character.objects.get_or_create(world=world, owner_email=request.user.email)
+        char, created = Character.objects.get_or_create(world=world, owner_email=request.user.email)
         if request.method == 'GET':
-            return Response(CharacterSerializer(char).data)
+            data = CharacterSerializer(char).data
+            data['created'] = created
+            return Response(data)
         serializer = CharacterSerializer(char, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -639,3 +653,47 @@ class WorldViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             serializer.save()
         return Response({'saved': True})
+
+    @action(detail=True, methods=['post'], url_path='relay-ticket')
+    def relay_ticket(self, request, pk=None):
+        """
+        POST /api/worlds/<id>/relay-ticket/ — appelé par le navigateur (JWT
+        Keycloak normal, donc déjà filtré par groupe requis comme toute API
+        du lab) juste avant d'ouvrir la connexion WebSocket vers `relay/`
+        (Lot 8). Voir RelayTicket pour le raisonnement complet.
+        """
+        world = self.get_object()
+        ticket = RelayTicket.objects.create(world=world, owner_email=request.user.email)
+        return Response({'ticket': ticket.token, 'world_id': world.id})
+
+
+class VerifyRelayTicketView(APIView):
+    """
+    POST /api/internal/verify-relay-ticket/ — appelé par `relay/`, jamais par
+    un navigateur : authentifié par secret partagé (header X-Relay-Key), même
+    famille de pattern que X-Engine-Key/VerifyTicketView de robot-lab.
+    Consomme le ticket (usage unique) et renvoie ce qu'il faut à `relay/`
+    pour rattacher la connexion WS au bon monde/utilisateur.
+
+    Body : {token: str}
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        key = request.headers.get('X-Relay-Key', '')
+        if not settings.RELAY_INTERNAL_KEY or key != settings.RELAY_INTERNAL_KEY:
+            return Response({'detail': 'Clé invalide.'}, status=status.HTTP_403_FORBIDDEN)
+
+        token = (request.data.get('token') or '').strip()
+        try:
+            ticket = RelayTicket.objects.select_related('world').get(token=token)
+        except RelayTicket.DoesNotExist:
+            return Response({'detail': 'Ticket inconnu.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not ticket.is_valid():
+            return Response({'detail': 'Ticket expiré ou déjà utilisé.'}, status=status.HTTP_410_GONE)
+
+        ticket.consume()
+        return Response({'world_id': ticket.world_id, 'owner_email': ticket.owner_email})

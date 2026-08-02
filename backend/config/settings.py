@@ -92,6 +92,10 @@ STORAGE_NAMESPACE = config('STORAGE_NAMESPACE', default='craft-lab')
 KEYCLOAK_PUBLIC_URL = config('KEYCLOAK_PUBLIC_URL', default=None)
 KEYCLOAK_REALM = config('KEYCLOAK_REALM', default=None)
 
+# Secret partagé avec relay/ (Lot 8) — même famille que ENGINE_INTERNAL_KEY de robot-lab,
+# cf. api/models.py::RelayTicket pour le raisonnement complet.
+RELAY_INTERNAL_KEY = config('RELAY_INTERNAL_KEY', default='')
+
 # Construct the issuer URL for the Swagger UI. If both public URL and realm are
 # provided, use them to form the WAN-facing issuer (e.g. https://host:port/realms/realm).
 # Otherwise fall back to the internal KEYCLOAK_ISSUER_URI value.

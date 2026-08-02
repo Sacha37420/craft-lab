@@ -18,6 +18,7 @@ from .views import (
     StatusEffectViewSet,
     ToolViewSet,
     UserListView,
+    VerifyRelayTicketView,
     WeaponViewSet,
     WorldViewSet,
 )
@@ -43,5 +44,6 @@ urlpatterns = [
     path('ai-config/<str:provider>/', AIProviderConfigView.as_view()),
     path('catalogue-assistant/suggest/', CatalogueAssistantView.as_view()),
     path('image-assistant/generate/', ImageAssistantView.as_view()),
+    path('internal/verify-relay-ticket/', VerifyRelayTicketView.as_view()),
     path('', include(router.urls)),
 ]

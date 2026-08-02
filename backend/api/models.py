@@ -1,6 +1,11 @@
+import secrets
+
 from django.db import models
+from django.utils import timezone
 
 from .fields import EncryptedTextField
+
+RELAY_TICKET_TTL_SECONDS = 30
 
 PROVIDER_CHOICES = [
     ('claude', 'Claude'),
@@ -670,3 +675,42 @@ class Character(models.Model):
 
     def __str__(self) -> str:
         return f'{self.owner_email} @ {self.world}'
+
+
+def _generate_relay_token() -> str:
+    return secrets.token_hex(32)
+
+
+class RelayTicket(models.Model):
+    """
+    Ticket à usage unique autorisant une connexion WebSocket sur `relay/`
+    (Lot 8) — même principe que `EngineTicket` de robot-lab (patron déjà
+    éprouvé dans le lab pour ce problème précis) : un navigateur ne peut pas
+    poser de header Authorization custom sur un handshake WS, donc Django
+    reste le seul point qui valide le JWT Keycloak (l'endpoint qui émet ce
+    billet est protégé comme toute API du lab), et `relay/` vérifie ce billet
+    par un callback interne (header `X-Relay-Key`, même famille que
+    `X-Engine-Key`/`X-Setup-Key`) plutôt que de revalider un JWT lui-même.
+    Consommé à la première vérification, expire vite
+    (`RELAY_TICKET_TTL_SECONDS`) : la fenêtre d'usage utile se limite au temps
+    d'ouvrir la connexion WS juste après l'avoir reçu.
+    """
+
+    token = models.CharField(max_length=64, unique=True, default=_generate_relay_token)
+    world = models.ForeignKey(World, on_delete=models.CASCADE, related_name='relay_tickets')
+    owner_email = models.EmailField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'relay_tickets'
+
+    def is_valid(self) -> bool:
+        if self.consumed_at is not None:
+            return False
+        age = (timezone.now() - self.created_at).total_seconds()
+        return age <= RELAY_TICKET_TTL_SECONDS
+
+    def consume(self) -> None:
+        self.consumed_at = timezone.now()
+        self.save(update_fields=['consumed_at'])
