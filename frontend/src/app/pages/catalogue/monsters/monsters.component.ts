@@ -72,7 +72,7 @@ export class MonstersComponent implements OnInit {
 
   openCreate(): void {
     this.form = {
-      name: '', description: '', level: 1, detection_range: 10, attack_type: 'melee',
+      name: '', description: '', level: 1, hp: 10, detection_range: 10, attack_type: 'melee',
       attack_damage: 1, attack_rate: 1, movement_patterns: [],
     };
     this.editing.set(null);
@@ -100,6 +100,7 @@ export class MonstersComponent implements OnInit {
       name: s.name,
       description: s.description,
       level: typeof s['level'] === 'number' ? s['level'] as number : this.form.level,
+      hp: typeof s['hp'] === 'number' ? s['hp'] as number : this.form.hp,
       detection_range: typeof s['detection_range'] === 'number' ? s['detection_range'] as number : this.form.detection_range,
       attack_type: (s['attack_type'] as Monster['attack_type']) ?? this.form.attack_type,
       attack_damage: typeof s['attack_damage'] === 'number' ? s['attack_damage'] as number : this.form.attack_damage,

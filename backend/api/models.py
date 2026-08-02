@@ -400,6 +400,10 @@ class Monster(models.Model):
     icon_path = models.CharField(max_length=1024, blank=True)
 
     level = models.PositiveIntegerField(default=1)
+    # Absent du cahier des charges section 1.8 (seuls détection/attaque y sont listés) mais
+    # indispensable dès qu'un combat doit pouvoir se terminer — trou trouvé et corrigé au Lot 6b,
+    # même famille que les trous IA carte/portail (Lot 5) et armes/projectiles (Lot 1).
+    hp = models.FloatField(default=10)
 
     # Mécanique de détection — portée + condition libre (ligne de vue...),
     # structure fine laissée ouverte au Lot 4.

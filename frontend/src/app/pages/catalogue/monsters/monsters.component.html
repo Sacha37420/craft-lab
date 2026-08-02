@@ -21,7 +21,7 @@
           </div>
           <p class="catalogue-card-desc">
             {{ item.description || '—' }}<br />
-            {{ item.attack_type }} · {{ item.attack_damage }} dégâts · détection {{ item.detection_range }}
+            {{ item.hp }} PV · {{ item.attack_type }} · {{ item.attack_damage }} dégâts · détection {{ item.detection_range }}
           </p>
           <div class="catalogue-card-actions">
             <button class="btn btn-secondary btn-sm" (click)="openDetail(item)">Compétences / Drops</button>
@@ -57,6 +57,10 @@
           <div class="form-group">
             <label>Niveau *</label>
             <input type="number" min="1" [(ngModel)]="form.level" name="level" required />
+          </div>
+          <div class="form-group">
+            <label>PV *</label>
+            <input type="number" step="0.1" min="0" [(ngModel)]="form.hp" name="hp" required />
           </div>
           <div class="form-group">
             <label>Portée de détection *</label>

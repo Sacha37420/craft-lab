@@ -92,6 +92,8 @@ CATEGORY_SPECS = {
         'standalone': True,
         'fields_doc': (
             "- level (entier) : niveau de difficulté/puissance relative\n"
+            "- hp (nombre) : points de vie, à équilibrer avec attack_damage des armes déjà "
+            "cataloguées (combien de coups moyens faut-il pour le vaincre)\n"
             "- detection_range (nombre) : portée de détection d'un personnage "
             "ennemi\n"
             "- attack_type : une valeur parmi melee/ranged/magic\n"
@@ -100,12 +102,13 @@ CATEGORY_SPECS = {
         ),
         'schema_props': {
             'level': {'type': 'integer'},
+            'hp': {'type': 'number'},
             'detection_range': {'type': 'number'},
             'attack_type': {'type': 'string', 'enum': ['melee', 'ranged', 'magic']},
             'attack_damage': {'type': 'number'},
             'attack_rate': {'type': 'number'},
         },
-        'required': ['level', 'detection_range', 'attack_type', 'attack_damage', 'attack_rate'],
+        'required': ['level', 'hp', 'detection_range', 'attack_type', 'attack_damage', 'attack_rate'],
     },
     'map': {
         'label': 'carte',

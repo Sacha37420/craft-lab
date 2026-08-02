@@ -38,8 +38,13 @@
       <div class="play-overlay">
         <div class="play-overlay-top">
           <button type="button" class="btn btn-secondary btn-sm" (click)="quit()">Quitter</button>
+          <button type="button" class="btn btn-secondary btn-sm" (click)="toggleCraft()">Artisanat</button>
+          <div class="play-hp">
+            <span>PV {{ hp() }} / {{ maxHp() }}</span>
+            <div class="play-hp-bar"><div class="play-hp-bar-fill" [style.width.%]="(hp() / maxHp()) * 100"></div></div>
+          </div>
           <p class="hint">
-            Déplacement : flèches / WASD — Saut : espace — Miner : clic gauche maintenu — Poser : clic droit
+            Déplacement : flèches / WASD — Saut : espace — Miner/attaquer : clic gauche — Poser : clic droit
           </p>
         </div>
 
@@ -52,10 +57,32 @@
           </div>
         }
 
+        @if (showCraft()) {
+          <div class="play-craft" (click)="$event.stopPropagation()">
+            <h4>Artisanat</h4>
+            @if (craftableRecipes().length === 0) {
+              <p class="hint">Aucune recette disponible dans ce catalogue.</p>
+            } @else {
+              <ul class="child-list">
+                @for (r of craftableRecipes(); track r.itemId) {
+                  <li>
+                    <span>{{ r.itemName }} — <span class="hint">{{ r.ingredientLabel }}</span></span>
+                    <button type="button" class="btn btn-primary btn-sm" [disabled]="!r.canCraft" (click)="craft(r.itemId)">
+                      Fabriquer
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        }
+
         <div class="play-inventory">
           @for (entry of inventory(); track entry.itemId) {
-            <button type="button" class="play-inventory-item" [class.selected]="selectedBlockId() === entry.itemId"
-                    [disabled]="entry.category !== 'block'" (click)="selectInventoryItem(entry)">
+            <button type="button" class="play-inventory-item"
+                    [class.selected]="selectedBlockId() === entry.itemId || equippedWeaponId() === entry.itemId"
+                    [disabled]="entry.category !== 'block' && entry.category !== 'weapon'"
+                    (click)="selectInventoryItem(entry)">
               <span>{{ entry.name }}</span>
               <span class="play-inventory-qty">×{{ entry.quantity }}</span>
             </button>

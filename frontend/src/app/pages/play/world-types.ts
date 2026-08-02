@@ -43,3 +43,48 @@ export interface WorldItemRef {
   category: string;
   iconUrl: string | null;
 }
+
+// ── Lot 6b : monstres, combat, craft ──────────────────────────────────────
+
+export interface WorldMonsterDrop {
+  itemId: number;
+  quantity: number;
+  chance: number;
+}
+
+export interface WorldMonsterDef {
+  id: number;
+  name: string;
+  hp: number;
+  detectionRange: number;
+  attackType: 'melee' | 'ranged' | 'magic';
+  attackDamage: number;
+  attackRate: number;
+  movementPatterns: string[];
+  drops: WorldMonsterDrop[];
+}
+
+export interface WorldMonsterSpawnRate {
+  monsterId: number;
+  chance: number;
+}
+
+export interface WorldWeaponDef {
+  id: number;
+  name: string;
+  style: 'melee' | 'ranged' | 'magic' | 'summon';
+  damage: number;
+  attackRange: number | null;
+  attackRate: number | null;
+}
+
+export interface WorldRecipeIngredient {
+  itemId: number;
+  quantity: number;
+}
+
+export interface WorldRecipe {
+  itemId: number;
+  itemName: string;
+  ingredients: WorldRecipeIngredient[];
+}

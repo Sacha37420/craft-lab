@@ -593,6 +593,40 @@ code, pre, .mono { font-family: var(--font-mono); }
   transition: width 0.08s linear;
 }
 
+.play-hp {
+  min-width: 160px;
+  font-size: var(--text-sm);
+}
+
+.play-hp-bar {
+  margin-top: var(--space-1);
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.play-hp-bar-fill {
+  height: 100%;
+  background: var(--danger);
+  transition: width 0.15s linear;
+}
+
+.play-craft {
+  pointer-events: auto;
+  align-self: flex-start;
+  max-width: 420px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+
+  h4 { margin-top: 0; }
+}
+
 .play-inventory {
   margin-top: auto;
   pointer-events: auto;

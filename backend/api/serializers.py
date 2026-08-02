@@ -286,7 +286,7 @@ class MonsterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Monster
         fields = [
-            'id', 'name', 'description', 'icon_path', 'icon_url', 'level',
+            'id', 'name', 'description', 'icon_path', 'icon_url', 'level', 'hp',
             'detection_range', 'detection_condition', 'attack_type', 'attack_damage',
             'attack_rate', 'movement_patterns', 'created_at', 'updated_at',
         ]

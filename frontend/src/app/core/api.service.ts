@@ -118,6 +118,7 @@ export interface MonsterDrop {
 
 export interface Monster extends CatalogueEntityBase {
   level: number;
+  hp: number;
   detection_range: number;
   detection_condition: Record<string, unknown>;
   attack_type: 'melee' | 'ranged' | 'magic';

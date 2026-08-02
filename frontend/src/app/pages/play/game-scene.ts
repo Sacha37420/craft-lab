@@ -2,7 +2,10 @@ import Phaser from 'phaser';
 import {
   generateTerrainPreview, GeneratedCell, ROWS_PER_TIER, TierRules,
 } from '../../shared/world/terrain-generation';
-import { InventoryEntry, WorldBlockDef, WorldItemRef, WorldToolDef } from './world-types';
+import {
+  InventoryEntry, WorldBlockDef, WorldItemRef, WorldMonsterDef, WorldMonsterSpawnRate,
+  WorldRecipe, WorldToolDef, WorldWeaponDef,
+} from './world-types';
 
 export const TILE_SIZE = 32;
 export const WORLD_WIDTH = 120;
@@ -16,24 +19,60 @@ const LIQUID_MAX_PER_TICK = 150;
 /** Ne pousse une mise à jour de progression de minage à Angular que si elle a assez changé — évite de saturer le zone Angular à 60 appels/s. */
 const MINING_PROGRESS_EMIT_STEP = 0.02;
 
+export const PLAYER_MAX_HP = 100;
+/** Cahier des charges 1.9 point 2 : réévaluation toutes les 5s, exclusion 10 blocks autour du joueur. */
+const MONSTER_SPAWN_TICK_MS = 5000;
+const MONSTER_SPAWN_EXCLUSION_TILES = 10;
+const MONSTER_SPAWN_VERTICAL_BAND_TILES = 10;
+const MONSTER_SPAWN_ATTEMPTS_PER_TICK = 5;
+/** Plafond propre à la taille réduite du monde local (le cahier des charges suppose un monde
+ * bien plus grand, cf. "10 à 10 000 blocks") — sans lui la densité de monstres diverge. */
+const MAX_LIVE_MONSTERS = 12;
+/** Simplification documentée : tout monstre attaque au contact, quel que soit son attack_type —
+ * aucune donnée de projectile n'est associée à un monstre dans le schéma actuel (WeaponProjectile
+ * ne lie que armes→projectiles). Modéliser un vrai monstre "à distance" nécessiterait d'étendre le
+ * schéma, hors périmètre du 6b. */
+const MONSTER_ATTACK_RANGE_TILES = 1.2;
+const DEFAULT_MELEE_RANGE_TILES = 1.5;
+const DEFAULT_RANGED_RANGE_TILES = 6;
+const BARE_HANDS_DAMAGE = 1;
+const BARE_HANDS_RANGE_TILES = 1.2;
+const BARE_HANDS_RATE = 1;
+
 export interface GameSceneConfig {
   seed: number;
   tiers: TierRules[];
   blockDefs: Map<number, WorldBlockDef>;
   tools: WorldToolDef[];
   itemsById: Map<number, WorldItemRef>;
+  monsters: Map<number, WorldMonsterDef>;
+  monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>;
+  weapons: WorldWeaponDef[];
+  recipes: WorldRecipe[];
   onInventoryChange: (entries: InventoryEntry[]) => void;
   onMiningProgress: (progress: number | null, blockName: string | null) => void;
   onMessage: (text: string) => void;
+  onHpChange: (hp: number, maxHp: number) => void;
 }
 
 interface TileXY { x: number; y: number; }
 
+interface LiveMonster {
+  sprite: Phaser.Physics.Arcade.Sprite;
+  def: WorldMonsterDef;
+  hp: number;
+  attackCooldownMs: number;
+  wanderDir: 1 | -1;
+  aiTimerMs: number;
+  flyDirX: number;
+  flyDirY: number;
+}
+
 /**
- * Simulation + rendu du monde jouable (Lot 6a). Ne parle jamais à l'API —
+ * Simulation + rendu du monde jouable (Lot 6a/6b). Ne parle jamais à l'API —
  * reçoit tout ce dont elle a besoin en config depuis PlayComponent (déjà
  * résolu depuis le catalogue) et ne fait que simuler/rendre localement, en
- * mémoire, sans aucune persistance (conforme à la portée du Lot 6a : "jouable
+ * mémoire, sans aucune persistance (conforme à la portée du Lot 6 : "jouable
  * en local, sans persistance ni multijoueur" — cf. to_do_craft_lab.md § 6).
  */
 export class GameScene extends Phaser.Scene {
@@ -61,6 +100,13 @@ export class GameScene extends Phaser.Scene {
   private liquidFrontier: TileXY[] = [];
   private liquidTickAccum = 0;
 
+  private playerHp = PLAYER_MAX_HP;
+  private equippedWeaponId: number | null = null;
+  private attackCooldownMs = 0;
+  private liveMonsters: LiveMonster[] = [];
+  private spawnTickAccum = 0;
+  private sortedTierDepthIndices: number[] = [];
+
   constructor(config: GameSceneConfig) {
     super('game');
     this.cfg = config;
@@ -69,6 +115,7 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.grid = generateTerrainPreview(this.cfg.seed, WORLD_WIDTH, this.cfg.tiers, ROWS_PER_TIER);
     this.worldHeight = this.grid.length;
+    this.sortedTierDepthIndices = [...this.cfg.tiers].sort((a, b) => a.depthIndex - b.depthIndex).map(t => t.depthIndex);
 
     this.buildTilemap();
     this.spawnPlayer();
@@ -76,17 +123,48 @@ export class GameScene extends Phaser.Scene {
     this.setupCamera();
     this.seedLiquidFrontier();
     this.giveStarterTools();
+    this.cfg.onHpChange(this.playerHp, PLAYER_MAX_HP);
   }
 
   override update(_time: number, delta: number): void {
+    // pointer.worldX/worldY ne sont recalculés par Phaser que sur un véritable événement pointeur
+    // (move/down/up) — si la caméra défile (le joueur suit un bloc miné en tombant, par exemple)
+    // sans que la souris ne bouge, la cible redevient obsolète et le minage s'arrête en silence.
+    // Forcer le recalcul à chaque frame règle ça, y compris pour un joueur qui creuse tout droit
+    // vers le bas sans toucher la souris.
+    this.input.activePointer.updateWorldPoint(this.cameras.main);
+
+    this.attackCooldownMs = Math.max(0, this.attackCooldownMs - delta);
     this.handleMovement();
-    this.handleMining(delta);
+    this.handleLeftClick(delta);
     this.tickLiquids(delta);
+    this.tickMonsterSpawns(delta);
+    this.tickMonsterAI(delta);
   }
 
   /** Appelé depuis PlayComponent quand l'utilisateur sélectionne (ou désélectionne) un block de l'inventaire à poser. */
   setSelectedBlock(itemId: number | null): void {
     this.selectedPlaceBlockId = itemId;
+  }
+
+  /** Appelé depuis PlayComponent quand l'utilisateur équipe (ou déséquipe) une arme de l'inventaire. */
+  setEquippedWeapon(itemId: number | null): void {
+    this.equippedWeaponId = itemId;
+  }
+
+  /** Fabrique 1 exemplaire de `itemId` si l'inventaire contient assez d'ingrédients — renvoie false sinon (message déjà émis). */
+  craftItem(itemId: number): boolean {
+    const recipe = this.cfg.recipes.find(r => r.itemId === itemId);
+    if (!recipe || recipe.ingredients.length === 0) return false;
+    for (const ing of recipe.ingredients) {
+      if ((this.inventory.get(ing.itemId) ?? 0) < ing.quantity) {
+        this.cfg.onMessage(`Ingrédients insuffisants pour fabriquer "${recipe.itemName}".`);
+        return false;
+      }
+    }
+    for (const ing of recipe.ingredients) this.removeFromInventory(ing.itemId, ing.quantity);
+    this.addToInventory(itemId, 1);
+    return true;
   }
 
   // ── Construction du monde ──────────────────────────────────────────────
@@ -257,12 +335,18 @@ export class GameScene extends Phaser.Scene {
 
   // ── Minage ───────────────────────────────────────────────────────────────
 
-  private withinReach(tx: number, ty: number): boolean {
+  private withinReach(tx: number, ty: number, rangeTiles = REACH_TILES): boolean {
     const px = Math.floor(this.player.x / TILE_SIZE);
     const py = Math.floor(this.player.y / TILE_SIZE);
     const dx = tx - px;
     const dy = ty - py;
-    return Math.sqrt(dx * dx + dy * dy) <= REACH_TILES;
+    return Math.sqrt(dx * dx + dy * dy) <= rangeTiles;
+  }
+
+  private distanceTilesTo(worldX: number, worldY: number): number {
+    const dx = (worldX - this.player.x) / TILE_SIZE;
+    const dy = (worldY - this.player.y) / TILE_SIZE;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   private tileFromWorld(wx: number, wy: number): TileXY {
@@ -283,10 +367,17 @@ export class GameScene extends Phaser.Scene {
     this.cfg.onMiningProgress(null, null);
   }
 
-  private handleMining(delta: number): void {
+  private handleLeftClick(delta: number): void {
     const pointer = this.input.activePointer;
     if (!pointer.leftButtonDown()) { this.cancelMining(); return; }
 
+    const monster = this.monsterUnderPointer(pointer);
+    if (monster) { this.cancelMining(); this.tryAttack(monster); return; }
+
+    this.handleMining(pointer, delta);
+  }
+
+  private handleMining(pointer: Phaser.Input.Pointer, delta: number): void {
     const { x: tx, y: ty } = this.tileFromWorld(pointer.worldX, pointer.worldY);
     if (tx < 0 || tx >= WORLD_WIDTH || ty < 0 || ty >= this.worldHeight || !this.withinReach(tx, ty)) {
       this.cancelMining();
@@ -351,6 +442,66 @@ export class GameScene extends Phaser.Scene {
     this.removeFromInventory(this.selectedPlaceBlockId, 1);
   }
 
+  // ── Combat ───────────────────────────────────────────────────────────────
+
+  private monsterUnderPointer(pointer: Phaser.Input.Pointer): LiveMonster | null {
+    for (const m of this.liveMonsters) {
+      if (m.sprite.getBounds().contains(pointer.worldX, pointer.worldY)) return m;
+    }
+    return null;
+  }
+
+  private tryAttack(monster: LiveMonster): void {
+    const weapon = this.equippedWeaponId != null ? this.cfg.weapons.find(w => w.id === this.equippedWeaponId) : undefined;
+    const range = weapon
+      ? weapon.attackRange ?? (weapon.style === 'melee' || weapon.style === 'summon' ? DEFAULT_MELEE_RANGE_TILES : DEFAULT_RANGED_RANGE_TILES)
+      : BARE_HANDS_RANGE_TILES;
+    if (this.distanceTilesTo(monster.sprite.x, monster.sprite.y) > range) {
+      this.cfg.onMessage('Trop loin pour attaquer.');
+      return;
+    }
+    if (this.attackCooldownMs > 0) return;
+
+    const rate = weapon?.attackRate || BARE_HANDS_RATE;
+    this.attackCooldownMs = 1000 / Math.max(rate, 0.1);
+    this.damageMonster(monster, weapon?.damage ?? BARE_HANDS_DAMAGE);
+  }
+
+  private damageMonster(monster: LiveMonster, damage: number): void {
+    monster.hp -= damage;
+    this.showFloatingText(monster.sprite.x, monster.sprite.y, `-${damage}`, '#ff6b6b');
+    if (monster.hp <= 0) this.killMonster(monster);
+  }
+
+  private killMonster(monster: LiveMonster): void {
+    for (const drop of monster.def.drops) {
+      if (Math.random() <= drop.chance) this.addToInventory(drop.itemId, drop.quantity);
+    }
+    monster.sprite.destroy();
+    this.liveMonsters = this.liveMonsters.filter(m => m !== monster);
+  }
+
+  private damagePlayer(damage: number): void {
+    this.playerHp = Math.max(0, this.playerHp - damage);
+    this.cfg.onHpChange(this.playerHp, PLAYER_MAX_HP);
+    this.showFloatingText(this.player.x, this.player.y, `-${damage}`, '#ffcc66');
+    if (this.playerHp <= 0) this.respawnPlayer();
+  }
+
+  private respawnPlayer(): void {
+    const spawn = this.findSpawn();
+    this.player.setPosition(spawn.x, spawn.y);
+    (this.player.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+    this.playerHp = PLAYER_MAX_HP;
+    this.cfg.onHpChange(this.playerHp, PLAYER_MAX_HP);
+    this.cfg.onMessage('Vous avez perdu connaissance... de retour au point de départ.');
+  }
+
+  private showFloatingText(x: number, y: number, text: string, color: string): void {
+    const t = this.add.text(x, y - TILE_SIZE, text, { fontSize: '16px', color, fontStyle: 'bold' }).setOrigin(0.5);
+    this.tweens.add({ targets: t, y: y - TILE_SIZE * 2, alpha: 0, duration: 600, onComplete: () => t.destroy() });
+  }
+
   // ── Écoulement des liquides ────────────────────────────────────────────
 
   private seedLiquidFrontier(): void {
@@ -394,6 +545,141 @@ export class GameScene extends Phaser.Scene {
         requeue.push(cell);
       }
       this.liquidFrontier.push(...requeue);
+    }
+  }
+
+  // ── Monstres : spawn ─────────────────────────────────────────────────────
+
+  private tickMonsterSpawns(delta: number): void {
+    this.spawnTickAccum += delta;
+    if (this.spawnTickAccum < MONSTER_SPAWN_TICK_MS) return;
+    this.spawnTickAccum = 0;
+    if (this.liveMonsters.length >= MAX_LIVE_MONSTERS) return;
+
+    const playerTileX = Math.floor(this.player.x / TILE_SIZE);
+    const playerTileY = Math.floor(this.player.y / TILE_SIZE);
+    const yMin = Math.max(0, playerTileY - MONSTER_SPAWN_VERTICAL_BAND_TILES);
+    const yMax = Math.min(this.worldHeight - 2, playerTileY + MONSTER_SPAWN_VERTICAL_BAND_TILES);
+    // Cahier des charges 1.9 point 2 : une "couronne... autour de chaque personnage", pas un
+    // tirage uniforme sur tout le monde — le candidat est cherché à une distance aléatoire dans
+    // l'anneau [exclusion, rayon max] du joueur, de part et d'autre (le rayon max du cahier des
+    // charges, 10 000, n'a pas de sens ici : notre monde entier tient dans quelques dizaines de
+    // blocks, donc borné à WORLD_WIDTH).
+    const maxRadius = Math.min(WORLD_WIDTH, 60);
+
+    for (let attempt = 0; attempt < MONSTER_SPAWN_ATTEMPTS_PER_TICK && this.liveMonsters.length < MAX_LIVE_MONSTERS; attempt++) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const radius = Phaser.Math.Between(MONSTER_SPAWN_EXCLUSION_TILES, maxRadius);
+      const x = Phaser.Math.Clamp(playerTileX + side * radius, 0, WORLD_WIDTH - 1);
+
+      let spawnY: number | null = null;
+      for (let y = yMin; y <= yMax; y++) {
+        if (this.grid[y][x].kind === 'void' && this.grid[y - 1]?.[x]?.kind === 'void'
+          && this.isSolidCollidableAt(x, y + 1)) {
+          spawnY = y;
+          break;
+        }
+      }
+      if (spawnY == null) continue;
+
+      const tierIndex = Math.min(this.sortedTierDepthIndices.length - 1, Math.floor(spawnY / ROWS_PER_TIER));
+      const depthIndex = this.sortedTierDepthIndices[tierIndex];
+      const spawnTable = this.cfg.monsterSpawnsByTier.get(depthIndex) ?? [];
+      for (const entry of spawnTable) {
+        if (Math.random() < entry.chance) {
+          this.spawnMonster(entry.monsterId, x, spawnY);
+          break;
+        }
+      }
+    }
+  }
+
+  private monsterTextureKey(def: WorldMonsterDef): string {
+    const key = `monster-${def.id}`;
+    if (!this.textures.exists(key)) {
+      const hue = (def.id * 67) % 360;
+      const color = Phaser.Display.Color.HSLToColor(hue / 360, 0.6, 0.45).color;
+      const g = this.add.graphics();
+      g.fillStyle(color, 1);
+      g.fillCircle(14, 14, 14);
+      g.fillStyle(0x000000, 0.6);
+      g.fillCircle(19, 10, 3);
+      g.generateTexture(key, 28, 28);
+      g.destroy();
+    }
+    return key;
+  }
+
+  private spawnMonster(monsterId: number, x: number, y: number): void {
+    const def = this.cfg.monsters.get(monsterId);
+    if (!def) return;
+    const sprite = this.physics.add.sprite(x * TILE_SIZE + TILE_SIZE / 2, (y + 1) * TILE_SIZE, this.monsterTextureKey(def));
+    sprite.setOrigin(0.5, 1);
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    body.setSize(24, 28);
+
+    const flying = def.movementPatterns.includes('flying');
+    if (flying) {
+      body.setAllowGravity(false);
+    } else {
+      body.setGravityY(GRAVITY_Y);
+      this.physics.add.collider(sprite, this.layer);
+    }
+
+    this.liveMonsters.push({
+      sprite, def, hp: def.hp, attackCooldownMs: 0,
+      wanderDir: Math.random() < 0.5 ? -1 : 1, aiTimerMs: 0, flyDirX: 1, flyDirY: 0,
+    });
+  }
+
+  // ── Monstres : IA ────────────────────────────────────────────────────────
+
+  private tickMonsterAI(delta: number): void {
+    for (const m of this.liveMonsters) {
+      const body = m.sprite.body as Phaser.Physics.Arcade.Body;
+      const patterns = m.def.movementPatterns;
+      const dx = this.player.x - m.sprite.x;
+      const dy = this.player.y - m.sprite.y;
+      const distTiles = Math.sqrt(dx * dx + dy * dy) / TILE_SIZE;
+      const detected = distTiles <= m.def.detectionRange;
+
+      m.aiTimerMs -= delta;
+
+      if (patterns.includes('flying')) {
+        if (m.aiTimerMs <= 0) {
+          if (detected && patterns.includes('chase')) { m.flyDirX = Math.sign(dx) || 1; m.flyDirY = Math.sign(dy) || 0; }
+          else if (detected && patterns.includes('flee')) { m.flyDirX = -Math.sign(dx) || 1; m.flyDirY = -Math.sign(dy) || 0; }
+          else { m.flyDirX = Math.random() < 0.5 ? -1 : 1; m.flyDirY = Math.random() < 0.5 ? -1 : 1; }
+          m.aiTimerMs = 400 + Math.random() * 400;
+        }
+        body.setVelocity(m.flyDirX * 60, m.flyDirY * 60);
+      } else {
+        if (m.aiTimerMs <= 0 || (detected && (patterns.includes('chase') || patterns.includes('flee')))) {
+          let dir = m.wanderDir;
+          if (detected && patterns.includes('chase')) dir = (Math.sign(dx) || dir) as 1 | -1;
+          else if (detected && patterns.includes('flee')) dir = (-Math.sign(dx) || dir) as 1 | -1;
+          m.wanderDir = dir;
+          m.aiTimerMs = detected ? 150 : 600 + Math.random() * 800;
+        }
+        const nextX = Math.floor((m.sprite.x + m.wanderDir * TILE_SIZE) / TILE_SIZE);
+        const currentY = Math.floor(m.sprite.y / TILE_SIZE);
+        const groundAhead = this.isSolidCollidableAt(nextX, currentY + 1);
+        const wallAhead = this.isSolidCollidableAt(nextX, currentY) || this.isSolidCollidableAt(nextX, currentY - 1);
+        if (!groundAhead || wallAhead) m.wanderDir = (m.wanderDir * -1) as 1 | -1;
+
+        const onGround = body.blocked.down || body.touching.down;
+        const speed = detected && patterns.includes('chase') ? 70 : 35;
+        body.setVelocityX(m.wanderDir * speed);
+        if (patterns.includes('jumping') && onGround && Math.random() < 0.02) body.setVelocityY(-320);
+      }
+
+      if (distTiles <= MONSTER_ATTACK_RANGE_TILES) {
+        m.attackCooldownMs -= delta;
+        if (m.attackCooldownMs <= 0) {
+          m.attackCooldownMs = 1000 / Math.max(m.def.attackRate, 0.1);
+          this.damagePlayer(m.def.attackDamage);
+        }
+      }
     }
   }
 
