@@ -38,6 +38,9 @@ const DEFAULT_RANGED_RANGE_TILES = 6;
 const BARE_HANDS_DAMAGE = 1;
 const BARE_HANDS_RANGE_TILES = 1.2;
 const BARE_HANDS_RATE = 1;
+/** Lot 8b — cadence de diffusion de l'état des monstres par l'hôte (position/PV), pas à chaque
+ * frame : suffisant pour un mouvement lisse côté clients non-hôtes sans saturer le relais. */
+const MONSTER_BROADCAST_INTERVAL_MS = 200;
 
 export interface InitialCharacterState {
   hp: number;
@@ -67,15 +70,19 @@ export interface GameSceneConfig {
   onMiningProgress: (progress: number | null, blockName: string | null) => void;
   onMessage: (text: string) => void;
   onHpChange: (hp: number, maxHp: number) => void;
-  /** Lot 8 — appelé pour un changement de bloc d'origine LOCALE (jamais pour un changement
-   * appliqué via applyRemoteBlockChange), pour que PlayComponent le diffuse aux autres joueurs. */
-  onLocalBlockChange?: (x: number, y: number, blockId: number | null) => void;
+  /** Lot 8 — point de sortie UNIQUE vers le réseau : blocks, position (déjà du 8a), et au 8b
+   * spawn/état/mort de monstre, demande d'attaque, butin, dégâts ciblés. GameScene ne sait jamais
+   * si un message part réellement sur le fil — PlayComponent décide (relais up ou non). */
+  onNetworkSend?: (msg: { type: string; [key: string]: unknown }) => void;
 }
 
 interface TileXY { x: number; y: number; }
 
 interface LiveMonster {
-  sprite: Phaser.Physics.Arcade.Sprite;
+  /** Identifiant attribué par l'hôte à la création (cf. spawnMonster/applyMonsterSpawn) — sert de
+   * clé de correspondance entre clients, indépendante de l'id catalogue (WorldMonsterDef.id). */
+  networkId: string;
+  sprite: Phaser.GameObjects.Sprite;
   def: WorldMonsterDef;
   hp: number;
   attackCooldownMs: number;
@@ -86,14 +93,21 @@ interface LiveMonster {
 }
 
 /**
- * Simulation + rendu du monde jouable (Lots 6a/6b/7). Ne parle jamais à
- * l'API — reçoit tout ce dont elle a besoin en config depuis PlayComponent
- * (déjà résolu depuis le catalogue, et déjà chargé depuis une sauvegarde le
- * cas échéant) et ne fait que simuler/rendre localement en mémoire.
- * PlayComponent lit `getBlockDiff()`/`getCharacterState()` au moment de
- * sauvegarder — cette classe ne déclenche jamais elle-même un appel réseau
- * (pas d'auto-save : "sauvegarde/chargement", pas de synchronisation
- * continue, qui reste le sujet du Lot 8 multijoueur).
+ * Simulation + rendu du monde jouable (Lots 6a/6b/7/8). Ne parle jamais
+ * directement à l'API ni au WebSocket — reçoit tout ce dont elle a besoin en
+ * config depuis PlayComponent et communique vers l'extérieur uniquement par
+ * callbacks (`onInventoryChange`, `onNetworkSend`...) ou par des getters lus
+ * à la demande (`getBlockDiff`, `getCharacterState`, `getPlayerTransform`).
+ *
+ * Autorité hôte (Lot 8b, cahier des charges section 3 : "autorité distribuée
+ * à un client hôte") limitée aux MONSTRES et à la résolution des combats —
+ * déplacement/minage/pose/liquides restent simulés localement par CHAQUE
+ * client, synchronisés par diffusion (8a), jamais par autorité complète du
+ * monde. `isHost`/`selfId` sont mutables (`configureNetworkRole`), pas de la
+ * config au constructeur : la partie démarre TOUJOURS en supposant l'autorité
+ * (comportement solo normal), et ne bascule en non-hôte qu'une fois la
+ * poignée de main du relais confirmée — sans ça, un joueur seul sans relais
+ * joignable n'aurait jamais aucun monstre.
  */
 export class GameScene extends Phaser.Scene {
   private readonly cfg: GameSceneConfig;
@@ -131,6 +145,17 @@ export class GameScene extends Phaser.Scene {
   // Lot 8 — proxies visuels des autres joueurs connectés au même monde, purement affichage
   // (pas de corps physique local : la position vient du relais, jamais simulée ici).
   private remotePlayers = new Map<string, { sprite: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text }>();
+  // Positions des joueurs distants (id de connexion -> dernière position connue) — utilisé par
+  // l'IA de monstre côté hôte pour cibler le joueur le plus proche, pas seulement le sien.
+  private remotePlayerPositions = new Map<string, { x: number; y: number }>();
+
+  // Lot 8b — mutables : la partie démarre en supposant l'autorité (cf. docstring de la classe),
+  // configureNetworkRole() les corrige une fois la poignée de main du relais confirmée.
+  private isHost = true;
+  private selfId = '';
+  private monsterBroadcastAccum = 0;
+  /** Cooldowns d'attaque des joueurs DISTANTS (côté hôte uniquement — le sien est attackCooldownMs). */
+  private remoteAttackCooldowns = new Map<string, number>();
 
   private playerHp = PLAYER_MAX_HP;
   private equippedWeaponId: number | null = null;
@@ -197,14 +222,33 @@ export class GameScene extends Phaser.Scene {
     entry.sprite.destroy();
     entry.label.destroy();
     this.remotePlayers.delete(id);
+    this.remotePlayerPositions.delete(id);
   }
 
   applyRemoteMove(id: string, x: number, y: number, flipX: boolean): void {
+    this.remotePlayerPositions.set(id, { x, y });
     const entry = this.remotePlayers.get(id);
     if (!entry) return;
     entry.sprite.setPosition(x, y);
     entry.sprite.setScale(flipX ? -1 : 1, 1);
     entry.label.setPosition(x, y - 46);
+  }
+
+  /**
+   * Appelé par PlayComponent dès que le relais confirme qui est l'hôte du salon (message
+   * `welcome` ou `host-changed`). Si on perd l'autorité qu'on avait par défaut à la création
+   * (cf. docstring de la classe), les monstres déjà simulés localement dans la fenêtre avant
+   * confirmation sont sans valeur (aucun autre client ne les connaît) — on les efface, le vrai
+   * hôte va rediffuser l'état correct via `monster-spawn`/`monster-state`.
+   */
+  configureNetworkRole(selfId: string, isHost: boolean): void {
+    const wasHost = this.isHost;
+    this.selfId = selfId;
+    this.isHost = isHost;
+    if (wasHost && !isHost) {
+      for (const m of this.liveMonsters) m.sprite.destroy();
+      this.liveMonsters = [];
+    }
   }
 
   override update(_time: number, delta: number): void {
@@ -216,11 +260,18 @@ export class GameScene extends Phaser.Scene {
     this.input.activePointer.updateWorldPoint(this.cameras.main);
 
     this.attackCooldownMs = Math.max(0, this.attackCooldownMs - delta);
+    if (this.isHost) {
+      for (const [id, ms] of this.remoteAttackCooldowns) {
+        const next = ms - delta;
+        if (next <= 0) this.remoteAttackCooldowns.delete(id); else this.remoteAttackCooldowns.set(id, next);
+      }
+    }
     this.handleMovement();
     this.handleLeftClick(delta);
     this.tickLiquids(delta);
     this.tickMonsterSpawns(delta);
     this.tickMonsterAI(delta);
+    this.tickMonsterBroadcast(delta);
   }
 
   /** Appelé depuis PlayComponent quand l'utilisateur sélectionne (ou désélectionne) un block de l'inventaire à poser. */
@@ -412,7 +463,7 @@ export class GameScene extends Phaser.Scene {
     this.grid[y][x] = { kind: 'void', color: 'transparent' };
     this.layer.removeTileAt(x, y);
     this.blockDiff.set(`${x},${y}`, null);
-    if (!this.applyingRemoteChange) this.cfg.onLocalBlockChange?.(x, y, null);
+    if (!this.applyingRemoteChange) this.cfg.onNetworkSend?.({ type: 'block-change', x, y, blockId: null });
   }
 
   private setCellBlock(x: number, y: number, blockId: number): void {
@@ -420,7 +471,7 @@ export class GameScene extends Phaser.Scene {
     this.grid[y][x] = { kind: 'block', blockId, blockName: def.name, color: def.color };
     this.layer.putTileAt(this.tileIndexByBlockId.get(blockId)!, x, y);
     this.blockDiff.set(`${x},${y}`, blockId);
-    if (!this.applyingRemoteChange) this.cfg.onLocalBlockChange?.(x, y, blockId);
+    if (!this.applyingRemoteChange) this.cfg.onNetworkSend?.({ type: 'block-change', x, y, blockId });
   }
 
   /** Applique un changement de bloc reçu du relais (Lot 8) — même mutation que setCellVoid/
@@ -577,12 +628,18 @@ export class GameScene extends Phaser.Scene {
     return null;
   }
 
+  /** Portée effective d'une arme (ou des mains nues si `weaponId` est absent/inconnu) — factorisé
+   * car utilisé à la fois pour l'attaque locale (tryAttack) et la résolution côté hôte d'une
+   * requête distante (resolveAttackRequest), qui doivent appliquer exactement la même règle. */
+  private weaponRange(weapon: WorldWeaponDef | undefined): number {
+    if (!weapon) return BARE_HANDS_RANGE_TILES;
+    return weapon.attackRange
+      ?? (weapon.style === 'melee' || weapon.style === 'summon' ? DEFAULT_MELEE_RANGE_TILES : DEFAULT_RANGED_RANGE_TILES);
+  }
+
   private tryAttack(monster: LiveMonster): void {
     const weapon = this.equippedWeaponId != null ? this.cfg.weapons.find(w => w.id === this.equippedWeaponId) : undefined;
-    const range = weapon
-      ? weapon.attackRange ?? (weapon.style === 'melee' || weapon.style === 'summon' ? DEFAULT_MELEE_RANGE_TILES : DEFAULT_RANGED_RANGE_TILES)
-      : BARE_HANDS_RANGE_TILES;
-    if (this.distanceTilesTo(monster.sprite.x, monster.sprite.y) > range) {
+    if (this.distanceTilesTo(monster.sprite.x, monster.sprite.y) > this.weaponRange(weapon)) {
       this.cfg.onMessage('Trop loin pour attaquer.');
       return;
     }
@@ -590,19 +647,54 @@ export class GameScene extends Phaser.Scene {
 
     const rate = weapon?.attackRate || BARE_HANDS_RATE;
     this.attackCooldownMs = 1000 / Math.max(rate, 0.1);
-    this.damageMonster(monster, weapon?.damage ?? BARE_HANDS_DAMAGE);
+    const damage = weapon?.damage ?? BARE_HANDS_DAMAGE;
+
+    if (this.isHost) {
+      // Résolu directement : l'hôte est déjà autoritaire sur ses propres monstres.
+      this.damageMonster(monster, damage, 'self');
+    } else {
+      // Un non-hôte ne peut pas trancher lui-même (il ne connaît les PV du monstre que par les
+      // diffusions de l'hôte, potentiellement en retard) — il demande, l'hôte résout et diffuse
+      // le résultat (dégâts affichés, mort, butin) à tout le salon.
+      this.cfg.onNetworkSend?.({
+        type: 'attack-request', monsterId: monster.networkId, weaponId: this.equippedWeaponId,
+        x: this.player.x, y: this.player.y,
+      });
+    }
   }
 
-  private damageMonster(monster: LiveMonster, damage: number): void {
+  /** Résolution d'une requête d'attaque envoyée par un client non-hôte — appelé par PlayComponent
+   * uniquement quand ce client EST l'hôte (sinon la requête ne le concerne pas). */
+  resolveAttackRequest(attackerId: string, monsterNetworkId: string, weaponId: number | null, attackerX: number, attackerY: number): void {
+    const monster = this.liveMonsters.find(m => m.networkId === monsterNetworkId);
+    if (!monster) return;
+    const weapon = weaponId != null ? this.cfg.weapons.find(w => w.id === weaponId) : undefined;
+    const dx = (attackerX - monster.sprite.x) / TILE_SIZE;
+    const dy = (attackerY - monster.sprite.y) / TILE_SIZE;
+    if (Math.sqrt(dx * dx + dy * dy) > this.weaponRange(weapon)) return; // hors de portée, requête ignorée
+    if ((this.remoteAttackCooldowns.get(attackerId) ?? 0) > 0) return;
+
+    const rate = weapon?.attackRate || BARE_HANDS_RATE;
+    this.remoteAttackCooldowns.set(attackerId, 1000 / Math.max(rate, 0.1));
+    this.damageMonster(monster, weapon?.damage ?? BARE_HANDS_DAMAGE, attackerId);
+  }
+
+  /** `looterId`: 'self' = crédite l'inventaire local directement (l'hôte s'attaque lui-même) ;
+   * un id de connexion = le butin appartient à un autre joueur, diffusé pour qu'IL se le crédite
+   * (cette classe ne connaît/ne modifie jamais l'inventaire d'un autre client). */
+  private damageMonster(monster: LiveMonster, damage: number, looterId: 'self' | string): void {
     monster.hp -= damage;
     this.showFloatingText(monster.sprite.x, monster.sprite.y, `-${damage}`, '#ff6b6b');
-    if (monster.hp <= 0) this.killMonster(monster);
+    if (monster.hp <= 0) this.killMonster(monster, looterId);
   }
 
-  private killMonster(monster: LiveMonster): void {
+  private killMonster(monster: LiveMonster, looterId: 'self' | string): void {
     for (const drop of monster.def.drops) {
-      if (Math.random() <= drop.chance) this.addToInventory(drop.itemId, drop.quantity);
+      if (Math.random() > drop.chance) continue;
+      if (looterId === 'self') this.addToInventory(drop.itemId, drop.quantity);
+      else this.cfg.onNetworkSend?.({ type: 'loot', targetId: looterId, itemId: drop.itemId, quantity: drop.quantity });
     }
+    this.cfg.onNetworkSend?.({ type: 'monster-death', monsterId: monster.networkId });
     monster.sprite.destroy();
     this.liveMonsters = this.liveMonsters.filter(m => m !== monster);
   }
@@ -612,6 +704,18 @@ export class GameScene extends Phaser.Scene {
     this.cfg.onHpChange(this.playerHp, PLAYER_MAX_HP);
     this.showFloatingText(this.player.x, this.player.y, `-${damage}`, '#ffcc66');
     if (this.playerHp <= 0) this.respawnPlayer();
+  }
+
+  /** Dégâts reçus d'un monstre simulé chez l'hôte, alors que CE client-ci est la cible (Lot 8b) —
+   * appelé par PlayComponent en réception d'un message `player-damage` qui lui est adressé. */
+  applyIncomingDamage(damage: number): void {
+    this.damagePlayer(damage);
+  }
+
+  /** Butin gagné en tuant un monstre alors que c'est un AUTRE client (l'hôte) qui a résolu le
+   * coup fatal — appelé par PlayComponent en réception d'un message `loot` qui lui est adressé. */
+  applyLoot(itemId: number, quantity: number): void {
+    this.addToInventory(itemId, quantity);
   }
 
   private respawnPlayer(): void {
@@ -677,6 +781,12 @@ export class GameScene extends Phaser.Scene {
   // ── Monstres : spawn ─────────────────────────────────────────────────────
 
   private tickMonsterSpawns(delta: number): void {
+    // Lot 8b : seul l'hôte simule/décide des spawns — les autres clients les reçoivent via
+    // `monster-spawn`. La couronne reste centrée sur la position de L'HÔTE (pas "chaque
+    // personnage connecté" au pluriel comme le décrit le cahier des charges à l'échelle d'un
+    // vrai serveur) : simplification assumée, cohérente avec l'autorité hôte limitée aux
+    // monstres/combat plutôt qu'une refonte complète en simulation multi-centres.
+    if (!this.isHost) return;
     this.spawnTickAccum += delta;
     if (this.spawnTickAccum < MONSTER_SPAWN_TICK_MS) return;
     this.spawnTickAccum = 0;
@@ -736,37 +846,107 @@ export class GameScene extends Phaser.Scene {
     return key;
   }
 
+  /**
+   * Crée l'entité Phaser d'un monstre — avec un vrai corps physique (gravité/collision) pour
+   * l'hôte, qui seul simule réellement les monstres, ou en pur sprite visuel pour un client
+   * non-hôte (dont la position est entièrement pilotée par `applyMonsterState`, jamais par une
+   * physique locale qui divergerait de celle de l'hôte).
+   */
+  private createMonsterEntity(networkId: string, def: WorldMonsterDef, x: number, y: number, hp: number, withPhysics: boolean): LiveMonster {
+    const textureKey = this.monsterTextureKey(def);
+    const sprite = withPhysics ? this.physics.add.sprite(x, y, textureKey) : this.add.sprite(x, y, textureKey);
+    sprite.setOrigin(0.5, 1);
+
+    if (withPhysics) {
+      const body = (sprite as Phaser.Physics.Arcade.Sprite).body as Phaser.Physics.Arcade.Body;
+      body.setSize(24, 28);
+      if (def.movementPatterns.includes('flying')) {
+        body.setAllowGravity(false);
+      } else {
+        body.setGravityY(GRAVITY_Y);
+        this.physics.add.collider(sprite as Phaser.Physics.Arcade.Sprite, this.layer);
+      }
+    }
+
+    return {
+      networkId, sprite, def, hp, attackCooldownMs: 0,
+      wanderDir: Math.random() < 0.5 ? -1 : 1, aiTimerMs: 0, flyDirX: 1, flyDirY: 0,
+    };
+  }
+
   private spawnMonster(monsterId: number, x: number, y: number): void {
     const def = this.cfg.monsters.get(monsterId);
     if (!def) return;
-    const sprite = this.physics.add.sprite(x * TILE_SIZE + TILE_SIZE / 2, (y + 1) * TILE_SIZE, this.monsterTextureKey(def));
-    sprite.setOrigin(0.5, 1);
-    const body = sprite.body as Phaser.Physics.Arcade.Body;
-    body.setSize(24, 28);
+    const networkId = crypto.randomUUID();
+    const worldX = x * TILE_SIZE + TILE_SIZE / 2;
+    const worldY = (y + 1) * TILE_SIZE;
+    const live = this.createMonsterEntity(networkId, def, worldX, worldY, def.hp, true);
+    this.liveMonsters.push(live);
+    this.cfg.onNetworkSend?.({ type: 'monster-spawn', monsterId: networkId, defId: def.id, x: worldX, y: worldY, hp: def.hp });
+  }
 
-    const flying = def.movementPatterns.includes('flying');
-    if (flying) {
-      body.setAllowGravity(false);
-    } else {
-      body.setGravityY(GRAVITY_Y);
-      this.physics.add.collider(sprite, this.layer);
+  // ── Monstres : réception réseau (Lot 8b, clients non-hôtes) ───────────────
+
+  applyMonsterSpawn(monsterId: string, defId: number, x: number, y: number, hp: number): void {
+    if (this.liveMonsters.some(m => m.networkId === monsterId)) return;
+    const def = this.cfg.monsters.get(defId);
+    if (!def) return;
+    this.liveMonsters.push(this.createMonsterEntity(monsterId, def, x, y, hp, false));
+  }
+
+  applyMonsterState(states: { monsterId: string; x: number; y: number; hp: number }[]): void {
+    for (const s of states) {
+      const m = this.liveMonsters.find(lm => lm.networkId === s.monsterId);
+      if (!m) continue;
+      m.sprite.setPosition(s.x, s.y);
+      m.hp = s.hp;
     }
+  }
 
-    this.liveMonsters.push({
-      sprite, def, hp: def.hp, attackCooldownMs: 0,
-      wanderDir: Math.random() < 0.5 ? -1 : 1, aiTimerMs: 0, flyDirX: 1, flyDirY: 0,
+  applyMonsterDeath(monsterId: string): void {
+    const idx = this.liveMonsters.findIndex(m => m.networkId === monsterId);
+    if (idx === -1) return;
+    this.liveMonsters[idx].sprite.destroy();
+    this.liveMonsters.splice(idx, 1);
+  }
+
+  /** Diffusion périodique (hôte uniquement) de la position/PV de tous les monstres vivants. */
+  private tickMonsterBroadcast(delta: number): void {
+    if (!this.isHost || !this.liveMonsters.length) return;
+    this.monsterBroadcastAccum += delta;
+    if (this.monsterBroadcastAccum < MONSTER_BROADCAST_INTERVAL_MS) return;
+    this.monsterBroadcastAccum = 0;
+    this.cfg.onNetworkSend?.({
+      type: 'monster-state',
+      monsters: this.liveMonsters.map(m => ({ monsterId: m.networkId, x: Math.round(m.sprite.x), y: Math.round(m.sprite.y), hp: m.hp })),
     });
   }
 
   // ── Monstres : IA ────────────────────────────────────────────────────────
 
+  /** Le joueur (soi-même ou distant) le plus proche d'un point donné — l'IA de monstre (hôte
+   * uniquement) cible celui-là, pas systématiquement le joueur local. */
+  private nearestPlayerTo(worldX: number, worldY: number): { id: 'self' | string; x: number; y: number; distTiles: number } {
+    let bestId: 'self' | string = 'self';
+    let bestX = this.player.x;
+    let bestY = this.player.y;
+    let bestDist = Math.sqrt((worldX - bestX) ** 2 + (worldY - bestY) ** 2) / TILE_SIZE;
+    for (const [id, pos] of this.remotePlayerPositions) {
+      const d = Math.sqrt((worldX - pos.x) ** 2 + (worldY - pos.y) ** 2) / TILE_SIZE;
+      if (d < bestDist) { bestDist = d; bestId = id; bestX = pos.x; bestY = pos.y; }
+    }
+    return { id: bestId, x: bestX, y: bestY, distTiles: bestDist };
+  }
+
   private tickMonsterAI(delta: number): void {
+    if (!this.isHost) return; // les monstres d'un non-hôte ne sont que des reflets de applyMonsterState
     for (const m of this.liveMonsters) {
       const body = m.sprite.body as Phaser.Physics.Arcade.Body;
       const patterns = m.def.movementPatterns;
-      const dx = this.player.x - m.sprite.x;
-      const dy = this.player.y - m.sprite.y;
-      const distTiles = Math.sqrt(dx * dx + dy * dy) / TILE_SIZE;
+      const nearest = this.nearestPlayerTo(m.sprite.x, m.sprite.y);
+      const dx = nearest.x - m.sprite.x;
+      const dy = nearest.y - m.sprite.y;
+      const distTiles = nearest.distTiles;
       const detected = distTiles <= m.def.detectionRange;
 
       m.aiTimerMs -= delta;
@@ -803,7 +983,8 @@ export class GameScene extends Phaser.Scene {
         m.attackCooldownMs -= delta;
         if (m.attackCooldownMs <= 0) {
           m.attackCooldownMs = 1000 / Math.max(m.def.attackRate, 0.1);
-          this.damagePlayer(m.def.attackDamage);
+          if (nearest.id === 'self') this.damagePlayer(m.def.attackDamage);
+          else this.cfg.onNetworkSend?.({ type: 'player-damage', targetId: nearest.id, damage: m.def.attackDamage });
         }
       }
     }

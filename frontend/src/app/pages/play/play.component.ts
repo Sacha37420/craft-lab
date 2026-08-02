@@ -105,6 +105,8 @@ export class PlayComponent implements OnInit, OnDestroy {
   private pendingLaunchTimeout?: ReturnType<typeof setTimeout>;
   private relaySocket: WebSocket | null = null;
   private moveIntervalId?: ReturnType<typeof setInterval>;
+  private selfId: string | null = null;
+  private isHost = true;
 
   ngOnInit(): void {
     this.api.getGameMaps().subscribe({
@@ -420,10 +422,8 @@ export class PlayComponent implements OnInit, OnDestroy {
           }),
           onMessage: text => this.zone.run(() => this.showMessage(text)),
           onHpChange: (hp, maxHp) => this.zone.run(() => { this.hp.set(hp); this.maxHp.set(maxHp); }),
-          onLocalBlockChange: (x, y, blockId) => {
-            if (this.relaySocket?.readyState === WebSocket.OPEN) {
-              this.relaySocket.send(JSON.stringify({ type: 'block-change', x, y, blockId }));
-            }
+          onNetworkSend: msg => {
+            if (this.relaySocket?.readyState === WebSocket.OPEN) this.relaySocket.send(JSON.stringify(msg));
           },
         });
         this.game = new Phaser.Game({
@@ -444,7 +444,7 @@ export class PlayComponent implements OnInit, OnDestroy {
     this.connectRelay(ctx.worldId!);
   }
 
-  // ── Multijoueur (Lot 8a) ──────────────────────────────────────────────────
+  // ── Multijoueur (Lot 8a/8b) ────────────────────────────────────────────────
 
   /**
    * Confort, pas dépendance dure : toute erreur ici (billet refusé, relais
@@ -454,6 +454,8 @@ export class PlayComponent implements OnInit, OnDestroy {
    */
   private connectRelay(worldId: number): void {
     this.remotePlayers.set([]);
+    this.selfId = null;
+    this.isHost = true; // hypothèse par défaut tant que le relais n'a pas confirmé — cf. GameScene.configureNetworkRole
     this.api.getRelayTicket(worldId).subscribe({
       next: ({ ticket }) => {
         const ws = new WebSocket(`${this.api.relayUrl}?ticket=${encodeURIComponent(ticket)}`);
@@ -474,11 +476,20 @@ export class PlayComponent implements OnInit, OnDestroy {
   private handleRelayMessage(msg: { type: string; id?: string; [k: string]: unknown }): void {
     switch (msg.type) {
       case 'welcome': {
-        const selfId = msg['selfId'] as string;
+        this.selfId = msg['selfId'] as string;
+        const hostId = msg['hostId'] as string;
+        this.isHost = hostId === this.selfId;
+        this.scene?.configureNetworkRole(this.selfId, this.isHost);
         const players = (msg['players'] as { id: string; ownerEmail: string }[])
-          .filter(p => p.id !== selfId);
+          .filter(p => p.id !== this.selfId);
         this.remotePlayers.set(players);
         for (const p of players) this.scene?.addRemotePlayer(p.id, p.ownerEmail);
+        break;
+      }
+      case 'host-changed': {
+        const hostId = msg['hostId'] as string;
+        this.isHost = hostId === this.selfId;
+        if (this.selfId) this.scene?.configureNetworkRole(this.selfId, this.isHost);
         break;
       }
       case 'player-joined': {
@@ -497,8 +508,34 @@ export class PlayComponent implements OnInit, OnDestroy {
       case 'block-change':
         this.scene?.applyRemoteBlockChange(msg['x'] as number, msg['y'] as number, msg['blockId'] as number | null);
         break;
+      case 'monster-spawn':
+        this.scene?.applyMonsterSpawn(
+          msg['monsterId'] as string, msg['defId'] as number, msg['x'] as number, msg['y'] as number, msg['hp'] as number,
+        );
+        break;
+      case 'monster-state':
+        this.scene?.applyMonsterState(msg['monsters'] as { monsterId: string; x: number; y: number; hp: number }[]);
+        break;
+      case 'monster-death':
+        this.scene?.applyMonsterDeath(msg['monsterId'] as string);
+        break;
+      case 'attack-request':
+        // Seul l'hôte est autoritaire sur ses monstres — un non-hôte qui reçoit ça (cas rare :
+        // deux clients se croient hôte un court instant après un host-changed) l'ignore simplement.
+        if (this.isHost) {
+          this.scene?.resolveAttackRequest(
+            msg.id!, msg['monsterId'] as string, msg['weaponId'] as number | null, msg['x'] as number, msg['y'] as number,
+          );
+        }
+        break;
+      case 'loot':
+        if (msg['targetId'] === this.selfId) this.scene?.applyLoot(msg['itemId'] as number, msg['quantity'] as number);
+        break;
+      case 'player-damage':
+        if (msg['targetId'] === this.selfId) this.scene?.applyIncomingDamage(msg['damage'] as number);
+        break;
       default:
-        break; // protocole ouvert à extension (Lot 8b : monstres/combat) — types inconnus ignorés
+        break; // protocole ouvert à extension — types inconnus ignorés
     }
   }
 
@@ -519,6 +556,8 @@ export class PlayComponent implements OnInit, OnDestroy {
     this.stopPositionBroadcast();
     if (this.relaySocket) { this.relaySocket.onclose = null; this.relaySocket.close(); this.relaySocket = null; }
     this.remotePlayers.set([]);
+    this.selfId = null;
+    this.isHost = true;
   }
 
   selectInventoryItem(entry: InventoryEntry): void {
