@@ -1,0 +1,128 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Armes</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Nouvelle arme</button>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="catalogue-grid">
+      @for (item of items(); track item.id) {
+        <div class="catalogue-card">
+          <div class="catalogue-card-header">
+            <strong>{{ item.name }}</strong>
+            <span class="badge badge-blue">{{ item.style }}</span>
+          </div>
+          <p class="catalogue-card-desc">
+            {{ item.description || '—' }}<br />
+            Dégâts {{ item.damage }}
+            @if (item.attack_range) { · Portée {{ item.attack_range }} }
+            @if (item.attack_rate) { · Cadence {{ item.attack_rate }} }
+          </p>
+          <div class="catalogue-card-actions">
+            <button class="btn btn-secondary btn-sm" (click)="openDetail(item)">Détails</button>
+            <button class="btn btn-secondary btn-sm" (click)="openEdit(item)">Modifier</button>
+            <button class="btn btn-danger btn-sm" (click)="delete(item)">Supprimer</button>
+          </div>
+        </div>
+      }
+      @if (items().length === 0) {
+        <p class="empty-state">Aucune arme définie.</p>
+      }
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editing() ? 'Modifier' : 'Nouvelle' }} arme</h3>
+      <form (ngSubmit)="save()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="form.name" name="name" required />
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="form.description" name="description"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Style *</label>
+            <select [(ngModel)]="form.style" name="style" required>
+              <option value="melee">Corps à corps</option>
+              <option value="ranged">À distance</option>
+              <option value="magic">Magique</option>
+              <option value="summon">D'invocation</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Dégâts *</label>
+            <input type="number" step="0.1" min="0" [(ngModel)]="form.damage" name="damage" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Portée</label>
+            <input type="number" step="0.1" min="0" [(ngModel)]="form.attack_range" name="attack_range" />
+          </div>
+          <div class="form-group">
+            <label>Cadence</label>
+            <input type="number" step="0.1" min="0" [(ngModel)]="form.attack_rate" name="attack_rate" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showDetail() && detail()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ detail()!.name }}</h3>
+
+      <app-recipe-editor category="weapons" [itemId]="detail()!.id!" [allItems]="allItems()" />
+
+      <h4>Projectiles compatibles</h4>
+      @if (links().length === 0) {
+        <p class="hint">Aucun projectile associé (arme de corps à corps, ou à configurer).</p>
+      } @else {
+        <ul class="child-list">
+          @for (link of links(); track link.id) {
+            <li>
+              <span>{{ link.projectile_name }} — {{ link.consumption_per_shot }} par tir</span>
+              <button type="button" class="btn btn-danger btn-sm" (click)="removeLink(link.id!)">Retirer</button>
+            </li>
+          }
+        </ul>
+      }
+      <div class="inline-form">
+        <div class="form-group">
+          <label>Projectile</label>
+          <select [(ngModel)]="linkForm.projectile" name="linkProjectile">
+            <option [ngValue]="null">— Choisir —</option>
+            @for (p of projectileItems(); track p.id) {
+              <option [ngValue]="p.id">{{ p.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-group" style="flex: 0 0 120px;">
+          <label>Conso./tir</label>
+          <input type="number" min="1" [(ngModel)]="linkForm.consumption_per_shot" name="linkConsumption" />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addLink()">+ Associer</button>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" (click)="close()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}

@@ -1,16 +1,20 @@
 <ng-template #navList let-onNavigate="onNavigate">
-  @for (item of navItems; track item.label) {
-    <a
-      [routerLink]="item.path"
-      routerLinkActive="active"
-      [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
-      class="nav-link"
-      [title]="item.label"
-      (click)="onNavigate()"
-    >
-      <span class="nav-icon">{{ item.abbr }}</span>
-      <span class="nav-label">{{ item.label }}</span>
-    </a>
+  @for (entry of navEntries; track entry.label) {
+    @if (entry.kind === 'section') {
+      <div class="nav-section">{{ entry.label }}</div>
+    } @else {
+      <a
+        [routerLink]="entry.path"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: entry.exact ?? false }"
+        class="nav-link"
+        [title]="entry.label"
+        (click)="onNavigate()"
+      >
+        <span class="nav-icon">{{ entry.abbr }}</span>
+        <span class="nav-label">{{ entry.label }}</span>
+      </a>
+    }
   }
 </ng-template>
 

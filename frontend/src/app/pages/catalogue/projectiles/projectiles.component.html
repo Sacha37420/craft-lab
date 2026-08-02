@@ -1,0 +1,75 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Projectiles</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Nouveau projectile</button>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="catalogue-grid">
+      @for (item of items(); track item.id) {
+        <div class="catalogue-card">
+          <div class="catalogue-card-header">
+            <strong>{{ item.name }}</strong>
+            <span class="badge badge-orange">{{ item.damage }} dégâts</span>
+          </div>
+          <p class="catalogue-card-desc">{{ item.description || '—' }}</p>
+          <div class="catalogue-card-actions">
+            <button class="btn btn-secondary btn-sm" (click)="openDetail(item)">Recette</button>
+            <button class="btn btn-secondary btn-sm" (click)="openEdit(item)">Modifier</button>
+            <button class="btn btn-danger btn-sm" (click)="delete(item)">Supprimer</button>
+          </div>
+        </div>
+      }
+      @if (items().length === 0) {
+        <p class="empty-state">Aucun projectile défini.</p>
+      }
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editing() ? 'Modifier' : 'Nouveau' }} projectile</h3>
+      <form (ngSubmit)="save()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="form.name" name="name" required />
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="form.description" name="description"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Dégâts *</label>
+          <input type="number" step="0.1" min="0" [(ngModel)]="form.damage" name="damage" required />
+        </div>
+        <div class="form-group">
+          <label>Effets complémentaires (JSON)</label>
+          <textarea [(ngModel)]="effectsText" name="effects" rows="3"
+                    placeholder='[{"status_effect": "poison"}]'></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showDetail() && detail()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ detail()!.name }}</h3>
+      <app-recipe-editor category="projectiles" [itemId]="detail()!.id!" [allItems]="allItems()" />
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" (click)="close()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}

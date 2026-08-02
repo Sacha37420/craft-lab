@@ -1,0 +1,31 @@
+<h4>Recette de craft</h4>
+
+@if (ingredients().length === 0) {
+  <p class="hint">Non craftable (aucun ingrédient) — obtenu autrement (drop, génération...).</p>
+} @else {
+  <ul class="child-list">
+    @for (ing of ingredients(); track ing.id) {
+      <li>
+        <span>{{ ing.quantity }}x {{ ing.ingredient_name }}</span>
+        <button type="button" class="btn btn-danger btn-sm" (click)="remove(ing.id!)">Retirer</button>
+      </li>
+    }
+  </ul>
+}
+
+<div class="inline-form">
+  <div class="form-group">
+    <label>Ingrédient</label>
+    <select [(ngModel)]="form.ingredient" name="recipeIngredient">
+      <option [ngValue]="null">— Choisir —</option>
+      @for (it of allItems(); track it.id) {
+        <option [ngValue]="it.id">{{ it.name }} ({{ it.category }})</option>
+      }
+    </select>
+  </div>
+  <div class="form-group" style="flex: 0 0 90px;">
+    <label>Quantité</label>
+    <input type="number" min="1" [(ngModel)]="form.quantity" name="recipeQuantity" />
+  </div>
+  <button type="button" class="btn btn-secondary btn-sm" (click)="add()">+ Ajouter</button>
+</div>

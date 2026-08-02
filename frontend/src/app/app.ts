@@ -4,12 +4,9 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { KeycloakService } from './core/keycloak.service';
 import { ThemeService } from './core/theme.service';
 
-interface NavItem {
-  label: string;
-  abbr: string;
-  path: string;
-  exact?: boolean;
-}
+type NavEntry =
+  | { kind: 'section'; label: string }
+  | { kind: 'link'; label: string; abbr: string; path: string; exact?: boolean };
 
 const MOBILE_CLOSE_ANIM_MS = 220;
 
@@ -31,9 +28,17 @@ export class AppComponent {
   protected noop = (): void => {};
   protected closeMobileFn = (): void => this.closeMobile();
 
-  readonly navItems: NavItem[] = [
-    { path: '/',        label: 'Accueil', abbr: 'Ac', exact: true },
-    { path: '/profile', label: 'Profil',  abbr: 'Pr' },
+  readonly navEntries: NavEntry[] = [
+    { kind: 'link', path: '/',        label: 'Accueil', abbr: 'Ac', exact: true },
+    { kind: 'section', label: 'Catalogue' },
+    { kind: 'link', path: '/catalogue/blocks',       label: 'Blocks',              abbr: 'Bl' },
+    { kind: 'link', path: '/catalogue/armes',        label: 'Armes',               abbr: 'Ar' },
+    { kind: 'link', path: '/catalogue/projectiles',  label: 'Projectiles',         abbr: 'Pj' },
+    { kind: 'link', path: '/catalogue/artefacts',    label: 'Artefacts',           abbr: 'At' },
+    { kind: 'link', path: '/catalogue/outils',       label: 'Outils',              abbr: 'Ou' },
+    { kind: 'link', path: '/catalogue/effets-statut', label: 'Effets de statut',   abbr: 'Es' },
+    { kind: 'section', label: 'Compte' },
+    { kind: 'link', path: '/profile', label: 'Profil',  abbr: 'Pr' },
   ];
 
   @ViewChild('closeBtn') private closeBtnRef?: ElementRef<HTMLButtonElement>;

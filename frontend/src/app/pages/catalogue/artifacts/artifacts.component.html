@@ -1,0 +1,97 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Artefacts</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Nouvel artefact</button>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="catalogue-grid">
+      @for (item of items(); track item.id) {
+        <div class="catalogue-card">
+          <div class="catalogue-card-header">
+            <strong>{{ item.name }}</strong>
+          </div>
+          <p class="catalogue-card-desc">{{ item.description || '—' }}</p>
+          <div class="catalogue-card-actions">
+            <button class="btn btn-secondary btn-sm" (click)="openDetail(item)">Effets</button>
+            <button class="btn btn-secondary btn-sm" (click)="openEdit(item)">Modifier</button>
+            <button class="btn btn-danger btn-sm" (click)="delete(item)">Supprimer</button>
+          </div>
+        </div>
+      }
+      @if (items().length === 0) {
+        <p class="empty-state">Aucun artefact défini.</p>
+      }
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editing() ? 'Modifier' : 'Nouvel' }} artefact</h3>
+      <form (ngSubmit)="save()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="form.name" name="name" required />
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="form.description" name="description"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showDetail() && detail()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ detail()!.name }}</h3>
+
+      <app-recipe-editor category="artifacts" [itemId]="detail()!.id!" [allItems]="allItems()" />
+
+      <h4>Effets cumulés</h4>
+      @if (effectError()) { <div class="alert alert-danger">{{ effectError() }}</div> }
+      @if (effects().length === 0) {
+        <p class="hint">Aucun effet — cet artefact n'a actuellement aucune utilité en jeu.</p>
+      } @else {
+        <ul class="child-list">
+          @for (eff of effects(); track eff.id) {
+            <li>
+              <span>{{ eff.effect_type_display }} — <code class="mono">{{ eff.parameters | json }}</code></span>
+              <button type="button" class="btn btn-danger btn-sm" (click)="removeEffect(eff.id!)">Retirer</button>
+            </li>
+          }
+        </ul>
+      }
+      <div class="inline-form">
+        <div class="form-group">
+          <label>Type d'effet</label>
+          <select [(ngModel)]="effectForm.effect_type" name="effectType">
+            @for (t of effectTypes; track t.value) {
+              <option [value]="t.value">{{ t.label }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Paramètres (JSON)</label>
+          <input [(ngModel)]="effectForm.parametersText" name="effectParams" placeholder='{"amount": 20}' />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addEffect()">+ Ajouter</button>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" (click)="close()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}
