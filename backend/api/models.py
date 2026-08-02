@@ -594,3 +594,79 @@ class Portal(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+# ── Lot 7 : persistance des mondes et personnages (cahier des charges section 3) ────────────────
+
+
+class World(models.Model):
+    """
+    Une partie sauvegardée. Les règles de génération sont RECOPIÉES depuis la
+    carte au moment de la création (pas de FK vers GameMap) : décision du
+    cahier des charges section 3 (« recopie, plus prévisible ») — une
+    évolution ultérieure du catalogue (taux ajustés, palier ajouté...) ne doit
+    pas faire dériver une partie déjà en cours.
+
+    `generation_rules` porte tout ce qu'il faut pour régénérer le terrain de
+    base à l'identique côté client (mêmes formes que consommées par
+    generateTerrainPreview + les tables de spawn de monstres par palier,
+    cf. frontend `shared/world/terrain-generation.ts` et
+    `pages/play/world-types.ts::WorldGenerationRules`) :
+        {"tiers": TierRules[], "monsterSpawns": [{"depthIndex": int, "spawns": [...]}]}
+
+    `block_diff` est un DIFF, pas une carte complète (cahier des charges :
+    « journal des modifications... un diff, pas une carte complète ») : une
+    seule entrée par cellule modifiée depuis la génération, clé "x,y" ->
+    id de block (int) ou null (case vidée). Couvre indifféremment le minage/la
+    pose par un joueur ET l'écoulement de liquide — un seul point
+    d'instrumentation côté GameScene (setCellVoid/setCellBlock), pas de
+    distinction de cause à ce stade.
+    """
+
+    name = models.CharField(max_length=200)
+    source_map_name = models.CharField(max_length=200, blank=True)
+    seed = models.IntegerField()
+    generation_rules = models.JSONField()
+    block_diff = models.JSONField(default=dict, blank=True)
+    created_by_email = models.EmailField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'worlds'
+        ordering = ['-updated_at']
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Character(models.Model):
+    """
+    Avancement d'un joueur dans un monde (cahier des charges section 3 :
+    « inventaire, PV/PM courants, position... structuré, en base, pas de
+    blob »). Un seul par (monde, utilisateur) — créé à la volée (get_or_create)
+    au premier chargement plutôt qu'explicitement à la création du monde,
+    pour rester correct si un autre membre du groupe rejoint plus tard un
+    monde déjà créé par quelqu'un d'autre (même catalogue partagé que le
+    reste de l'app, cf. CLAUDE.md "Partage lié à un groupe Keycloak").
+    """
+
+    world = models.ForeignKey(World, on_delete=models.CASCADE, related_name='characters')
+    owner_email = models.EmailField()
+    hp = models.FloatField(default=100)
+    position_x = models.FloatField(default=0)
+    position_y = models.FloatField(default=0)
+    # {item_id (str): quantity (int)} — mêmes clés-chaînes qu'un JSON standard,
+    # cohérent avec block_diff ci-dessus.
+    inventory = models.JSONField(default=dict, blank=True)
+    equipped_weapon_id = models.IntegerField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'characters'
+        constraints = [
+            models.UniqueConstraint(fields=['world', 'owner_email'], name='uniq_character_per_world_owner'),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.owner_email} @ {self.world}'

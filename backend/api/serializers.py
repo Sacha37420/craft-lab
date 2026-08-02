@@ -7,6 +7,7 @@ from .models import (
     ArtifactEffect,
     Block,
     BlockDrop,
+    Character,
     Department,
     DepthTier,
     DepthTierBlockRate,
@@ -24,6 +25,7 @@ from .models import (
     UserRecord,
     Weapon,
     WeaponProjectile,
+    World,
 )
 
 
@@ -350,3 +352,37 @@ class PortalSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'frame_pattern', 'destination_map',
             'destination_map_name', 'created_at', 'updated_at',
         ]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 7 : persistance des mondes et personnages
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class WorldSerializer(serializers.ModelSerializer):
+    """
+    Utilisé pour la liste (`GET /api/worlds/`) — délibérément SANS
+    `generation_rules`/`block_diff` (potentiellement volumineux, inutiles
+    pour un simple choix de partie à reprendre). Voir WorldDetailSerializer
+    pour le détail complet, chargé une fois la partie choisie.
+    """
+
+    class Meta:
+        model = World
+        fields = ['id', 'name', 'source_map_name', 'seed', 'created_by_email', 'created_at', 'updated_at']
+        read_only_fields = ['created_by_email', 'created_at', 'updated_at']
+
+
+class WorldDetailSerializer(WorldSerializer):
+    class Meta(WorldSerializer.Meta):
+        fields = WorldSerializer.Meta.fields + ['generation_rules', 'block_diff']
+
+
+class CharacterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Character
+        fields = [
+            'id', 'world', 'owner_email', 'hp', 'position_x', 'position_y',
+            'inventory', 'equipped_weapon_id', 'updated_at',
+        ]
+        read_only_fields = ['world', 'owner_email', 'updated_at']

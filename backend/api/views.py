@@ -20,6 +20,7 @@ from .models import (
     ArtifactEffect,
     Block,
     BlockDrop,
+    Character,
     Department,
     DepthTier,
     DepthTierBlockRate,
@@ -37,6 +38,7 @@ from .models import (
     UserRecord,
     Weapon,
     WeaponProjectile,
+    World,
 )
 from .serializers import (
     AIProviderConfigSerializer,
@@ -44,6 +46,7 @@ from .serializers import (
     ArtifactSerializer,
     BlockDropSerializer,
     BlockSerializer,
+    CharacterSerializer,
     DepartmentSerializer,
     DepthTierBlockRateSerializer,
     DepthTierMonsterSpawnSerializer,
@@ -61,6 +64,8 @@ from .serializers import (
     UserRecordSerializer,
     WeaponProjectileSerializer,
     WeaponSerializer,
+    WorldDetailSerializer,
+    WorldSerializer,
 )
 
 _VALID_PROVIDERS = {key for key, _ in PROVIDER_CHOICES}
@@ -570,3 +575,67 @@ class PortalViewSet(viewsets.ModelViewSet):
 
     queryset = Portal.objects.select_related('destination_map')
     serializer_class = PortalSerializer
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 7 : persistance des mondes et personnages
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class WorldViewSet(viewsets.ModelViewSet):
+    """
+    Un monde est un objet partagé par tout le groupe autorisé (même catalogue
+    partagé que le reste de l'app — aucune app du lab avec cloisonnement de
+    lecture par utilisateur, cf. CLAUDE.md) : n'importe quel membre peut
+    lister/créer/reprendre/supprimer n'importe quelle partie sauvegardée. Ce
+    qui est propre à chaque joueur, c'est son `Character` dans ce monde
+    (action `character` ci-dessous), pas le monde lui-même.
+    """
+
+    queryset = World.objects.all()
+
+    def get_serializer_class(self):
+        return WorldSerializer if self.action == 'list' else WorldDetailSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(created_by_email=self.request.user.email)
+
+    @action(detail=True, methods=['get', 'put'], url_path='character')
+    def character(self, request, pk=None):
+        """
+        GET : récupère (en la créant si besoin — get_or_create) l'avancement
+        de l'utilisateur courant dans ce monde. PUT : le met à jour en entier
+        (position/PV/inventaire/arme équipée) — utilisé par `save` côté client
+        au moment de sauvegarder/quitter, jamais d'auto-save côté serveur.
+        """
+        world = self.get_object()
+        char, _ = Character.objects.get_or_create(world=world, owner_email=request.user.email)
+        if request.method == 'GET':
+            return Response(CharacterSerializer(char).data)
+        serializer = CharacterSerializer(char, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='save')
+    def save_progress(self, request, pk=None):
+        """
+        Sauvegarde combinée monde + personnage en un seul appel — c'est ce
+        que `Sauvegarder`/`Quitter` appellent côté client, plutôt que deux
+        requêtes séparées qui pourraient réussir partiellement. `block_diff`
+        est FUSIONNÉ (pas remplacé) avec l'existant : le client n'envoie que
+        les cellules changées depuis le dernier chargement, jamais tout le
+        diff accumulé.
+        """
+        world = self.get_object()
+        diff_updates = request.data.get('block_diff')
+        if diff_updates:
+            world.block_diff.update(diff_updates)
+            world.save(update_fields=['block_diff', 'updated_at'])
+        char_data = request.data.get('character')
+        if char_data:
+            char, _ = Character.objects.get_or_create(world=world, owner_email=request.user.email)
+            serializer = CharacterSerializer(char, data=char_data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+        return Response({'saved': True})

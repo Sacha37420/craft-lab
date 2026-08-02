@@ -39,6 +39,14 @@ const BARE_HANDS_DAMAGE = 1;
 const BARE_HANDS_RANGE_TILES = 1.2;
 const BARE_HANDS_RATE = 1;
 
+export interface InitialCharacterState {
+  hp: number;
+  positionX: number;
+  positionY: number;
+  inventory: Record<number, number>;
+  equippedWeaponId: number | null;
+}
+
 export interface GameSceneConfig {
   seed: number;
   tiers: TierRules[];
@@ -49,6 +57,12 @@ export interface GameSceneConfig {
   monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>;
   weapons: WorldWeaponDef[];
   recipes: WorldRecipe[];
+  /** Diff persisté d'une partie sauvegardée (Lot 7) — absent pour une toute nouvelle partie. */
+  initialBlockDiff?: Record<string, number | null>;
+  /** Avancement persisté d'une partie sauvegardée (Lot 7) — absent pour une toute nouvelle partie
+   * (dans ce cas le joueur apparaît au point de spawn trouvé automatiquement, avec le kit de
+   * départ habituel, cf. giveStarterTools). */
+  initialCharacter?: InitialCharacterState;
   onInventoryChange: (entries: InventoryEntry[]) => void;
   onMiningProgress: (progress: number | null, blockName: string | null) => void;
   onMessage: (text: string) => void;
@@ -69,11 +83,14 @@ interface LiveMonster {
 }
 
 /**
- * Simulation + rendu du monde jouable (Lot 6a/6b). Ne parle jamais à l'API —
- * reçoit tout ce dont elle a besoin en config depuis PlayComponent (déjà
- * résolu depuis le catalogue) et ne fait que simuler/rendre localement, en
- * mémoire, sans aucune persistance (conforme à la portée du Lot 6 : "jouable
- * en local, sans persistance ni multijoueur" — cf. to_do_craft_lab.md § 6).
+ * Simulation + rendu du monde jouable (Lots 6a/6b/7). Ne parle jamais à
+ * l'API — reçoit tout ce dont elle a besoin en config depuis PlayComponent
+ * (déjà résolu depuis le catalogue, et déjà chargé depuis une sauvegarde le
+ * cas échéant) et ne fait que simuler/rendre localement en mémoire.
+ * PlayComponent lit `getBlockDiff()`/`getCharacterState()` au moment de
+ * sauvegarder — cette classe ne déclenche jamais elle-même un appel réseau
+ * (pas d'auto-save : "sauvegarde/chargement", pas de synchronisation
+ * continue, qui reste le sujet du Lot 8 multijoueur).
  */
 export class GameScene extends Phaser.Scene {
   private readonly cfg: GameSceneConfig;
@@ -100,6 +117,12 @@ export class GameScene extends Phaser.Scene {
   private liquidFrontier: TileXY[] = [];
   private liquidTickAccum = 0;
 
+  // Cellules changées PENDANT cette session (pas le diff hérité d'une sauvegarde — cf.
+  // applyInitialDiff, qui mute this.grid directement sans passer par ici). Lu par
+  // getBlockDiff() au moment de sauvegarder ; le backend FUSIONNE plutôt que remplacer,
+  // donc il n'y a pas besoin de préremplir avec le diff hérité.
+  private blockDiff = new Map<string, number | null>();
+
   private playerHp = PLAYER_MAX_HP;
   private equippedWeaponId: number | null = null;
   private attackCooldownMs = 0;
@@ -116,14 +139,32 @@ export class GameScene extends Phaser.Scene {
     this.grid = generateTerrainPreview(this.cfg.seed, WORLD_WIDTH, this.cfg.tiers, ROWS_PER_TIER);
     this.worldHeight = this.grid.length;
     this.sortedTierDepthIndices = [...this.cfg.tiers].sort((a, b) => a.depthIndex - b.depthIndex).map(t => t.depthIndex);
+    this.applyInitialDiff();
 
     this.buildTilemap();
     this.spawnPlayer();
     this.setupInput();
     this.setupCamera();
     this.seedLiquidFrontier();
-    this.giveStarterTools();
+
+    if (this.cfg.initialCharacter) this.restoreCharacter(this.cfg.initialCharacter);
+    else this.giveStarterTools();
     this.cfg.onHpChange(this.playerHp, PLAYER_MAX_HP);
+  }
+
+  /** Sauvegarde/chargement (Lot 7) — lus par PlayComponent au moment de sauvegarder/quitter. */
+  getBlockDiff(): Record<string, number | null> {
+    return Object.fromEntries(this.blockDiff);
+  }
+
+  getCharacterState(): InitialCharacterState {
+    return {
+      hp: this.playerHp,
+      positionX: this.player.x,
+      positionY: this.player.y,
+      inventory: Object.fromEntries(this.inventory),
+      equippedWeaponId: this.equippedWeaponId,
+    };
   }
 
   override update(_time: number, delta: number): void {
@@ -206,7 +247,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnPlayer(): void {
-    const spawn = this.findSpawn();
+    const spawn = this.cfg.initialCharacter
+      ? { x: this.cfg.initialCharacter.positionX, y: this.cfg.initialCharacter.positionY }
+      : this.findSpawn();
 
     if (!this.textures.exists('player')) {
       const g = this.add.graphics();
@@ -263,9 +306,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private giveStarterTools(): void {
-    // Aucune autre voie d'acquisition d'outil au Lot 6a (le craft arrive au 6b) :
-    // le joueur démarre avec le meilleur outil de chaque type déjà présent au catalogue,
-    // en attendant un vrai système de personnage/kit de départ (Lot 7).
+    // Uniquement pour une TOUTE NOUVELLE partie (cf. create() : sinon restoreCharacter()
+    // reprend l'inventaire sauvegardé). Le joueur démarre avec le meilleur outil du
+    // catalogue — un vrai système de kit de départ par personnage reste à faire
+    // (indépendant de la persistance elle-même, apportée par le Lot 7).
     const byType = new Map<string, WorldToolDef>();
     for (const tool of this.cfg.tools) {
       // Le type exact n'est pas porté par WorldToolDef (pas nécessaire au minage,
@@ -276,6 +320,35 @@ export class GameScene extends Phaser.Scene {
     }
     const best = byType.get('best');
     if (best) this.addToInventory(best.id, 1);
+  }
+
+  /**
+   * Applique le diff hérité d'une sauvegarde (Lot 7) en mutant `this.grid` directement — appelé
+   * AVANT `buildTilemap()`, qui lit `this.grid` pour peupler ses tuiles initiales, donc le diff
+   * est déjà "cuit" dans le monde généré sans double affichage ni deuxième passe sur le layer.
+   */
+  private applyInitialDiff(): void {
+    const diff = this.cfg.initialBlockDiff;
+    if (!diff) return;
+    for (const [key, blockId] of Object.entries(diff)) {
+      const [xs, ys] = key.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      if (!this.grid[y]?.[x]) continue;
+      if (blockId == null) {
+        this.grid[y][x] = { kind: 'void', color: 'transparent' };
+      } else {
+        const def = this.cfg.blockDefs.get(blockId);
+        if (def) this.grid[y][x] = { kind: 'block', blockId, blockName: def.name, color: def.color };
+      }
+    }
+  }
+
+  private restoreCharacter(character: InitialCharacterState): void {
+    this.playerHp = character.hp;
+    this.equippedWeaponId = character.equippedWeaponId;
+    this.inventory = new Map(Object.entries(character.inventory).map(([id, qty]) => [Number(id), qty]));
+    this.emitInventory();
   }
 
   // ── Lecture/écriture de la grille ────────────────────────────────────────
@@ -298,12 +371,14 @@ export class GameScene extends Phaser.Scene {
   private setCellVoid(x: number, y: number): void {
     this.grid[y][x] = { kind: 'void', color: 'transparent' };
     this.layer.removeTileAt(x, y);
+    this.blockDiff.set(`${x},${y}`, null);
   }
 
   private setCellBlock(x: number, y: number, blockId: number): void {
     const def = this.cfg.blockDefs.get(blockId)!;
     this.grid[y][x] = { kind: 'block', blockId, blockName: def.name, color: def.color };
     this.layer.putTileAt(this.tileIndexByBlockId.get(blockId)!, x, y);
+    this.blockDiff.set(`${x},${y}`, blockId);
   }
 
   // ── Déplacement ───────────────────────────────────────────────────────────

@@ -6,6 +6,32 @@
   @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
 
   @if (!playing()) {
+    <h3>Parties sauvegardées</h3>
+    @if (loadingWorlds()) {
+      <p class="loading">Chargement…</p>
+    } @else if (savedWorlds().length === 0) {
+      <p class="empty-state">Aucune partie sauvegardée pour l'instant.</p>
+    } @else {
+      <div class="catalogue-grid">
+        @for (w of savedWorlds(); track w.id) {
+          <div class="catalogue-card">
+            <div class="catalogue-card-header"><strong>{{ w.name }}</strong></div>
+            <p class="catalogue-card-desc">
+              {{ w.source_map_name || '—' }}<br />
+              Dernière partie : {{ w.updated_at | date: 'short' }}
+            </p>
+            <div class="catalogue-card-actions">
+              <button type="button" class="btn btn-secondary btn-sm" (click)="deleteWorld(w, $event)">Supprimer</button>
+              <button type="button" class="btn btn-primary btn-sm" [disabled]="loadingWorld()" (click)="continueGame(w)">
+                Continuer
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <h3 style="margin-top: 2rem;">Nouvelle partie</h3>
     @if (loadingMaps()) {
       <p class="loading">Chargement…</p>
     } @else if (maps().length === 0) {
@@ -21,12 +47,16 @@
       </div>
 
       <div class="inline-form" style="margin-top: 1rem;">
+        <div class="form-group">
+          <label>Nom de la partie</label>
+          <input type="text" [(ngModel)]="newWorldName" name="worldName" placeholder="Ma partie" />
+        </div>
         <div class="form-group" style="flex: 0 0 140px;">
           <label>Seed</label>
           <input type="number" [(ngModel)]="seed" name="seed" />
         </div>
         <button type="button" class="btn btn-primary" [disabled]="!selectedMapId || loadingWorld()"
-                (click)="startGame(mapById(selectedMapId!))">
+                (click)="startNewGame(mapById(selectedMapId!))">
           {{ loadingWorld() ? 'Génération du monde…' : 'Commencer' }}
         </button>
       </div>
@@ -38,7 +68,11 @@
       <div class="play-overlay">
         <div class="play-overlay-top">
           <button type="button" class="btn btn-secondary btn-sm" (click)="quit()">Quitter</button>
+          <button type="button" class="btn btn-secondary btn-sm" [disabled]="saving()" (click)="save()">
+            {{ saving() ? 'Sauvegarde…' : 'Sauvegarder' }}
+          </button>
           <button type="button" class="btn btn-secondary btn-sm" (click)="toggleCraft()">Artisanat</button>
+          <span class="hint">{{ worldName() }}</span>
           <div class="play-hp">
             <span>PV {{ hp() }} / {{ maxHp() }}</span>
             <div class="play-hp-bar"><div class="play-hp-bar-fill" [style.width.%]="(hp() / maxHp()) * 100"></div></div>

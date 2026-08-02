@@ -1,29 +1,57 @@
 import { Component, inject, NgZone, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { forkJoin } from 'rxjs';
+import { DatePipe } from '@angular/common';
+import { forkJoin, Observable, of } from 'rxjs';
 import Phaser from 'phaser';
 import {
   Artifact, ApiService, Block, CatalogueCategoryPath, DepthTier, DepthTierBlockRate,
   DepthTierMonsterSpawn, GameMap, Monster, Projectile, RecipeIngredient, Tool, Weapon,
+  World, WorldGenerationRules,
 } from '../../core/api.service';
 import { colorForBlockId, TierRules } from '../../shared/world/terrain-generation';
-import { GameScene } from './game-scene';
+import { GameScene, InitialCharacterState } from './game-scene';
 import {
   InventoryEntry, WorldBlockDef, WorldItemRef, WorldMonsterDef, WorldMonsterSpawnRate,
   WorldRecipe, WorldToolDef, WorldWeaponDef,
 } from './world-types';
 
+interface CatalogBundle {
+  blocks: Block[]; tools: Tool[]; items: { id: number; name: string; category: string; icon_url?: string | null }[];
+  monsters: Monster[]; weapons: Weapon[]; projectiles: Projectile[]; artifacts: Artifact[];
+}
+
+/**
+ * `forkJoin([])` (tableau vide) ne complète JAMAIS avec une valeur — un piège RxJS documenté,
+ * pas une erreur : sans source à combiner, l'Observable se termine silencieusement sans jamais
+ * appeler `next()`. Un `forkJoin({...})` englobant qui dépend de ce résultat reste alors bloqué
+ * indéfiniment, sans erreur ni message. Une carte sans monstre (donc `monsterIds` vide) suffit à
+ * déclencher ce cas — pas un scénario exotique.
+ */
+function forkJoinOrEmpty<T>(sources: Observable<T>[]): Observable<T[]> {
+  return sources.length ? forkJoin(sources) : of([]);
+}
+
+/** Contexte propre à CHAQUE lancement (nouvelle partie vs reprise) — accumulé au fil de la chaîne de chargement. */
+interface LaunchContext {
+  worldId: number | null;
+  worldName: string;
+  sourceMapName: string;
+  seed: number;
+  initialBlockDiff?: Record<string, number | null>;
+  initialCharacter?: InitialCharacterState;
+}
+
 /**
  * Page Jouer (cahier des charges § 3 et § 6) — génère un monde réel à partir
- * des règles de la carte choisie et le rend jouable (déplacement, physique,
- * minage/pose de blocks, monstres, combat, craft) via Phaser. Solo, en
- * mémoire uniquement — aucune sauvegarde (Lot 7) ni synchronisation
- * multijoueur (Lot 8).
+ * des règles de la carte choisie (nouvelle partie) ou d'une sauvegarde
+ * (Lot 7) et le rend jouable (déplacement, physique, minage/pose de blocks,
+ * monstres, combat, craft) via Phaser. Solo côté simulation — la
+ * synchronisation multijoueur reste le sujet du Lot 8.
  */
 @Component({
   selector: 'app-play',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, DatePipe],
   templateUrl: './play.component.html',
 })
 export class PlayComponent implements OnInit, OnDestroy {
@@ -32,13 +60,18 @@ export class PlayComponent implements OnInit, OnDestroy {
 
   maps = signal<GameMap[]>([]);
   loadingMaps = signal(true);
+  savedWorlds = signal<World[]>([]);
+  loadingWorlds = signal(true);
   loadingWorld = signal(false);
   error = signal<string | null>(null);
 
   selectedMapId: number | null = null;
+  newWorldName = '';
   seed = 1;
 
   playing = signal(false);
+  worldId = signal<number | null>(null);
+  worldName = signal('');
   inventory = signal<InventoryEntry[]>([]);
   selectedBlockId = signal<number | null>(null);
   equippedWeaponId = signal<number | null>(null);
@@ -47,6 +80,7 @@ export class PlayComponent implements OnInit, OnDestroy {
   message = signal<string | null>(null);
   hp = signal(100);
   maxHp = signal(100);
+  saving = signal(false);
 
   showCraft = signal(false);
   recipes: WorldRecipe[] = [];
@@ -61,6 +95,7 @@ export class PlayComponent implements OnInit, OnDestroy {
       next: maps => { this.maps.set(maps); this.loadingMaps.set(false); },
       error: err => { this.error.set(`Erreur ${err.status}`); this.loadingMaps.set(false); },
     });
+    this.refreshWorlds();
   }
 
   ngOnDestroy(): void {
@@ -71,7 +106,24 @@ export class PlayComponent implements OnInit, OnDestroy {
     return this.maps().find(m => m.id === id)!;
   }
 
-  startGame(map: GameMap): void {
+  private refreshWorlds(): void {
+    this.loadingWorlds.set(true);
+    this.api.getWorlds().subscribe({
+      next: worlds => { this.savedWorlds.set(worlds); this.loadingWorlds.set(false); },
+      error: err => { this.error.set(`Erreur ${err.status}`); this.loadingWorlds.set(false); },
+    });
+  }
+
+  deleteWorld(world: World, event: Event): void {
+    event.stopPropagation();
+    if (!confirm(`Supprimer définitivement la partie "${world.name}" ?`)) return;
+    this.api.deleteWorld(world.id!).subscribe({ next: () => this.refreshWorlds() });
+  }
+
+  // ── Nouvelle partie ───────────────────────────────────────────────────────
+
+  startNewGame(map: GameMap): void {
+    if (!this.newWorldName.trim()) { this.error.set('Donnez un nom à cette partie.'); return; }
     this.error.set(null);
     this.loadingWorld.set(true);
 
@@ -86,7 +138,19 @@ export class PlayComponent implements OnInit, OnDestroy {
           blockRates: forkJoin(tiers.map(t => this.api.getDepthTierBlockRates(t.id!))),
           monsterSpawns: forkJoin(tiers.map(t => this.api.getDepthTierMonsterSpawns(t.id!))),
         }).subscribe({
-          next: ({ blockRates, monsterSpawns }) => this.onRatesLoaded(tiers, blockRates, monsterSpawns),
+          next: ({ blockRates, monsterSpawns }) => {
+            const blockCount = blockRates.reduce((n, list) => n + list.filter(r => r.block != null).length, 0);
+            if (blockCount === 0) {
+              this.error.set('Aucun bloc défini pour les paliers de cette carte — impossible de générer un monde.');
+              this.loadingWorld.set(false);
+              return;
+            }
+            const tierRules = this.buildTierRules(tiers, blockRates);
+            const monsterSpawnsByTier = this.buildMonsterSpawnsByTier(tiers, monsterSpawns);
+            this.loadCatalogAndLaunch(tierRules, monsterSpawnsByTier, {
+              worldId: null, worldName: this.newWorldName.trim(), sourceMapName: map.name, seed: this.seed || 1,
+            });
+          },
           error: () => { this.error.set('Erreur lors du chargement des taux de blocks/monstres.'); this.loadingWorld.set(false); },
         });
       },
@@ -94,18 +158,69 @@ export class PlayComponent implements OnInit, OnDestroy {
     });
   }
 
-  private onRatesLoaded(
-    tiers: DepthTier[], blockRateLists: DepthTierBlockRate[][], monsterSpawnLists: DepthTierMonsterSpawn[][],
+  private buildTierRules(tiers: DepthTier[], blockRateLists: DepthTierBlockRate[][]): TierRules[] {
+    return tiers.map((t, i) => ({
+      depthIndex: t.depth_index,
+      voidRate: t.void_rate,
+      blockRates: blockRateLists[i]
+        .filter(r => r.block != null)
+        .map(r => ({
+          blockId: r.block as number, blockName: r.block_name ?? '',
+          color: colorForBlockId(r.block as number), rate: r.rate,
+        })),
+    }));
+  }
+
+  private buildMonsterSpawnsByTier(
+    tiers: DepthTier[], monsterSpawnLists: DepthTierMonsterSpawn[][],
+  ): Map<number, WorldMonsterSpawnRate[]> {
+    const map = new Map<number, WorldMonsterSpawnRate[]>();
+    tiers.forEach((t, i) => {
+      map.set(t.depth_index, monsterSpawnLists[i]
+        .filter(s => s.monster != null)
+        .map(s => ({ monsterId: s.monster as number, chance: s.spawn_chance })));
+    });
+    return map;
+  }
+
+  // ── Reprise d'une partie sauvegardée (Lot 7) ─────────────────────────────
+
+  continueGame(world: World): void {
+    this.error.set(null);
+    this.loadingWorld.set(true);
+
+    forkJoin({
+      detail: this.api.getWorld(world.id!),
+      character: this.api.getCharacter(world.id!),
+    }).subscribe({
+      next: ({ detail, character }) => {
+        const tierRules = detail.generation_rules.tiers;
+        const monsterSpawnsByTier = new Map<number, WorldMonsterSpawnRate[]>(
+          detail.generation_rules.monsterSpawns.map(e => [e.depthIndex, e.spawns]),
+        );
+        const initialCharacter: InitialCharacterState = {
+          hp: character.hp,
+          positionX: character.position_x,
+          positionY: character.position_y,
+          inventory: Object.fromEntries(Object.entries(character.inventory).map(([id, qty]) => [Number(id), qty])),
+          equippedWeaponId: character.equipped_weapon_id,
+        };
+        this.loadCatalogAndLaunch(tierRules, monsterSpawnsByTier, {
+          worldId: detail.id!, worldName: detail.name, sourceMapName: detail.source_map_name ?? '',
+          seed: detail.seed, initialBlockDiff: detail.block_diff, initialCharacter,
+        });
+      },
+      error: () => { this.error.set('Erreur lors du chargement de la partie sauvegardée.'); this.loadingWorld.set(false); },
+    });
+  }
+
+  // ── Chaîne de chargement du catalogue, commune aux deux entrées ci-dessus ──
+
+  private loadCatalogAndLaunch(
+    tierRules: TierRules[], monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>, ctx: LaunchContext,
   ): void {
-    const blockIds = new Set<number>();
-    blockRateLists.forEach(list => list.forEach(r => { if (r.block != null) blockIds.add(r.block); }));
-    if (blockIds.size === 0) {
-      this.error.set('Aucun bloc défini pour les paliers de cette carte — impossible de générer un monde.');
-      this.loadingWorld.set(false);
-      return;
-    }
-    const monsterIds = new Set<number>();
-    monsterSpawnLists.forEach(list => list.forEach(s => { if (s.monster != null) monsterIds.add(s.monster); }));
+    const blockIds = [...new Set(tierRules.flatMap(t => t.blockRates.map(r => r.blockId)))];
+    const monsterIds = [...new Set([...monsterSpawnsByTier.values()].flatMap(list => list.map(s => s.monsterId)))];
 
     forkJoin({
       blocks: this.api.getBlocks(),
@@ -116,39 +231,32 @@ export class PlayComponent implements OnInit, OnDestroy {
       projectiles: this.api.getProjectiles(),
       artifacts: this.api.getArtifacts(),
     }).subscribe({
-      next: catalog => this.onCatalogLoaded(tiers, blockRateLists, monsterSpawnLists, [...blockIds], [...monsterIds], catalog),
+      next: catalog => this.onCatalogLoaded(tierRules, monsterSpawnsByTier, blockIds, monsterIds, catalog, ctx),
       error: () => { this.error.set('Erreur lors du chargement du catalogue.'); this.loadingWorld.set(false); },
     });
   }
 
   private onCatalogLoaded(
-    tiers: DepthTier[], blockRateLists: DepthTierBlockRate[][], monsterSpawnLists: DepthTierMonsterSpawn[][],
-    blockIds: number[], monsterIds: number[],
-    catalog: {
-      blocks: Block[]; tools: Tool[]; items: { id: number; name: string; category: string; icon_url?: string | null }[];
-      monsters: Monster[]; weapons: Weapon[]; projectiles: Projectile[]; artifacts: Artifact[];
-    },
+    tierRules: TierRules[], monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>,
+    blockIds: number[], monsterIds: number[], catalog: CatalogBundle, ctx: LaunchContext,
   ): void {
     forkJoin({
-      blockDrops: forkJoin(blockIds.map(id => this.api.getBlockDrops(id))),
-      monsterDrops: forkJoin(monsterIds.map(id => this.api.getMonsterDrops(id))),
+      blockDrops: forkJoinOrEmpty(blockIds.map(id => this.api.getBlockDrops(id))),
+      monsterDrops: forkJoinOrEmpty(monsterIds.map(id => this.api.getMonsterDrops(id))),
     }).subscribe({
       next: ({ blockDrops, monsterDrops }) => this.onDropsLoaded(
-        tiers, blockRateLists, monsterSpawnLists, blockIds, monsterIds, catalog, blockDrops, monsterDrops,
+        tierRules, monsterSpawnsByTier, blockIds, monsterIds, catalog, blockDrops, monsterDrops, ctx,
       ),
       error: () => { this.error.set('Erreur lors du chargement des tables de drop.'); this.loadingWorld.set(false); },
     });
   }
 
   private onDropsLoaded(
-    tiers: DepthTier[], blockRateLists: DepthTierBlockRate[][], monsterSpawnLists: DepthTierMonsterSpawn[][],
-    blockIds: number[], monsterIds: number[],
-    catalog: {
-      blocks: Block[]; tools: Tool[]; items: { id: number; name: string; category: string; icon_url?: string | null }[];
-      monsters: Monster[]; weapons: Weapon[]; projectiles: Projectile[]; artifacts: Artifact[];
-    },
+    tierRules: TierRules[], monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>,
+    blockIds: number[], monsterIds: number[], catalog: CatalogBundle,
     blockDropLists: { dropped_item: number | null; quantity: number; chance: number }[][],
     monsterDropLists: { dropped_item: number | null; quantity: number; chance: number }[][],
+    ctx: LaunchContext,
   ): void {
     // Recette potentielle pour tout objet des 5 catégories craftables (1.1) — le craft n'est pas
     // limité aux blocks/outils utilisés dans cette carte, tout le catalogue reste fabricable.
@@ -159,38 +267,24 @@ export class PlayComponent implements OnInit, OnDestroy {
       ...catalog.tools.map(t => ({ category: 'tools' as const, id: t.id!, name: t.name })),
       ...catalog.blocks.map(b => ({ category: 'blocks' as const, id: b.id!, name: b.name })),
     ];
-    forkJoin(recipeTargets.map(t => this.api.getRecipe(t.category, t.id))).subscribe({
+    forkJoinOrEmpty(recipeTargets.map(t => this.api.getRecipe(t.category, t.id))).subscribe({
       next: recipeLists => this.onRecipesLoaded(
-        tiers, blockRateLists, monsterSpawnLists, blockIds, monsterIds, catalog,
-        blockDropLists, monsterDropLists, recipeTargets, recipeLists,
+        tierRules, monsterSpawnsByTier, blockIds, monsterIds, catalog,
+        blockDropLists, monsterDropLists, recipeTargets, recipeLists, ctx,
       ),
       error: () => { this.error.set('Erreur lors du chargement des recettes.'); this.loadingWorld.set(false); },
     });
   }
 
   private onRecipesLoaded(
-    tiers: DepthTier[], blockRateLists: DepthTierBlockRate[][], monsterSpawnLists: DepthTierMonsterSpawn[][],
-    blockIds: number[], monsterIds: number[],
-    catalog: {
-      blocks: Block[]; tools: Tool[]; items: { id: number; name: string; category: string; icon_url?: string | null }[];
-      monsters: Monster[]; weapons: Weapon[]; projectiles: Projectile[]; artifacts: Artifact[];
-    },
+    tierRules: TierRules[], monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>,
+    blockIds: number[], monsterIds: number[], catalog: CatalogBundle,
     blockDropLists: { dropped_item: number | null; quantity: number; chance: number }[][],
     monsterDropLists: { dropped_item: number | null; quantity: number; chance: number }[][],
     recipeTargets: { category: CatalogueCategoryPath; id: number; name: string }[],
     recipeLists: RecipeIngredient[][],
+    ctx: LaunchContext,
   ): void {
-    const tierRules: TierRules[] = tiers.map((t, i) => ({
-      depthIndex: t.depth_index,
-      voidRate: t.void_rate,
-      blockRates: blockRateLists[i]
-        .filter(r => r.block != null)
-        .map(r => ({
-          blockId: r.block as number, blockName: r.block_name ?? '',
-          color: colorForBlockId(r.block as number), rate: r.rate,
-        })),
-    }));
-
     const blockDefs = new Map<number, WorldBlockDef>();
     blockIds.forEach((id, i) => {
       const b = catalog.blocks.find(bl => bl.id === id);
@@ -224,13 +318,6 @@ export class PlayComponent implements OnInit, OnDestroy {
       });
     });
 
-    const monsterSpawnsByTier = new Map<number, WorldMonsterSpawnRate[]>();
-    tiers.forEach((t, i) => {
-      monsterSpawnsByTier.set(t.depth_index, monsterSpawnLists[i]
-        .filter(s => s.monster != null)
-        .map(s => ({ monsterId: s.monster as number, chance: s.spawn_chance })));
-    });
-
     const weaponDefs: WorldWeaponDef[] = catalog.weapons.map(w => ({
       id: w.id!, name: w.name, style: w.style, damage: w.damage, attackRange: w.attack_range, attackRate: w.attack_rate,
     }));
@@ -245,20 +332,44 @@ export class PlayComponent implements OnInit, OnDestroy {
       }));
     this.recipes = recipes;
 
-    this.loadingWorld.set(false);
-    this.launchPhaser(tierRules, blockDefs, toolDefs, itemsById, monsterDefs, monsterSpawnsByTier, weaponDefs);
+    if (ctx.worldId != null) {
+      this.loadingWorld.set(false);
+      this.launchPhaser(tierRules, blockDefs, toolDefs, itemsById, monsterDefs, monsterSpawnsByTier, weaponDefs, ctx);
+      return;
+    }
+
+    // Nouvelle partie : la sauvegarde n'existe pas encore côté serveur — on la crée maintenant
+    // que les règles de génération complètes (blocks + monstres) sont connues.
+    const generationRules: WorldGenerationRules = {
+      tiers: tierRules,
+      monsterSpawns: [...monsterSpawnsByTier.entries()].map(([depthIndex, spawns]) => ({ depthIndex, spawns })),
+    };
+    this.api.createWorld({
+      name: ctx.worldName, source_map_name: ctx.sourceMapName, seed: ctx.seed, generation_rules: generationRules,
+    }).subscribe({
+      next: created => {
+        this.loadingWorld.set(false);
+        this.launchPhaser(tierRules, blockDefs, toolDefs, itemsById, monsterDefs, monsterSpawnsByTier, weaponDefs, {
+          ...ctx, worldId: created.id!,
+        });
+      },
+      error: () => { this.error.set('Erreur lors de la création de la partie.'); this.loadingWorld.set(false); },
+    });
   }
 
   private launchPhaser(
     tiers: TierRules[], blockDefs: Map<number, WorldBlockDef>, tools: WorldToolDef[], itemsById: Map<number, WorldItemRef>,
-    monsters: Map<number, WorldMonsterDef>, monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>, weapons: WorldWeaponDef[],
+    monsters: Map<number, WorldMonsterDef>, monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>,
+    weapons: WorldWeaponDef[], ctx: LaunchContext,
   ): void {
     this.destroyGame();
     this.inventory.set([]);
     this.selectedBlockId.set(null);
-    this.equippedWeaponId.set(null);
+    this.equippedWeaponId.set(ctx.initialCharacter?.equippedWeaponId ?? null);
     this.miningProgress.set(null);
     this.showCraft.set(false);
+    this.worldId.set(ctx.worldId);
+    this.worldName.set(ctx.worldName);
     // Le conteneur #phaser-container n'existe dans le DOM qu'une fois `playing`
     // passé à true (bloc @if du template) — Phaser résout son `parent` par id
     // dès la construction de Phaser.Game, donc il faut laisser Angular rendre
@@ -270,7 +381,7 @@ export class PlayComponent implements OnInit, OnDestroy {
     this.pendingLaunchTimeout = setTimeout(() => {
       this.zone.runOutsideAngular(() => {
         this.scene = new GameScene({
-          seed: this.seed || 1,
+          seed: ctx.seed,
           tiers,
           blockDefs,
           tools,
@@ -279,6 +390,8 @@ export class PlayComponent implements OnInit, OnDestroy {
           monsterSpawnsByTier,
           weapons,
           recipes: this.recipes,
+          initialBlockDiff: ctx.initialBlockDiff,
+          initialCharacter: ctx.initialCharacter,
           onInventoryChange: entries => this.zone.run(() => this.inventory.set(entries)),
           onMiningProgress: (progress, blockName) => this.zone.run(() => {
             this.miningProgress.set(progress);
@@ -331,14 +444,53 @@ export class PlayComponent implements OnInit, OnDestroy {
     this.showCraft.update(v => !v);
   }
 
+  // ── Sauvegarde (Lot 7) ────────────────────────────────────────────────────
+
+  save(): void {
+    const id = this.worldId();
+    if (!this.scene || id == null || this.saving()) return;
+    this.saving.set(true);
+    const blockDiff = this.scene.getBlockDiff();
+    const character = this.scene.getCharacterState();
+    this.api.saveProgress(id, {
+      block_diff: blockDiff,
+      character: {
+        hp: character.hp, position_x: character.positionX, position_y: character.positionY,
+        inventory: Object.fromEntries(Object.entries(character.inventory).map(([k, v]) => [String(k), v])),
+        equipped_weapon_id: character.equippedWeaponId,
+      },
+    }).subscribe({
+      next: () => { this.saving.set(false); this.showMessage('Partie sauvegardée.'); },
+      error: () => { this.saving.set(false); this.showMessage('Erreur lors de la sauvegarde.'); },
+    });
+  }
+
   quit(): void {
-    this.destroyGame();
+    const id = this.worldId();
+    if (this.scene && id != null) {
+      const blockDiff = this.scene.getBlockDiff();
+      const character = this.scene.getCharacterState();
+      this.api.saveProgress(id, {
+        block_diff: blockDiff,
+        character: {
+          hp: character.hp, position_x: character.positionX, position_y: character.positionY,
+          inventory: Object.fromEntries(Object.entries(character.inventory).map(([k, v]) => [String(k), v])),
+          equipped_weapon_id: character.equippedWeaponId,
+        },
+      }).subscribe({
+        next: () => { this.destroyGame(); this.refreshWorlds(); },
+        error: () => { this.destroyGame(); this.refreshWorlds(); },
+      });
+    } else {
+      this.destroyGame();
+    }
   }
 
   private destroyGame(): void {
     if (this.pendingLaunchTimeout) { clearTimeout(this.pendingLaunchTimeout); this.pendingLaunchTimeout = undefined; }
     if (this.game) { this.game.destroy(true); this.game = null; }
     this.scene = null;
+    this.worldId.set(null);
     this.playing.set(false);
   }
 

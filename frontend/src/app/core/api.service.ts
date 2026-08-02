@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { KeycloakService } from './keycloak.service';
+import { TierRules } from '../shared/world/terrain-generation';
 
 interface EnvWindow {
   __env?: { apiUrl?: string; storageApiUrl?: string };
@@ -174,6 +175,42 @@ export interface Portal {
   destination_map: number | null;
   destination_map_name?: string | null;
   created_at?: string;
+  updated_at?: string;
+}
+
+// ── Persistance des mondes — Lot 7 (section 3) ────────────────────────────
+
+export interface WorldGenerationRules {
+  tiers: TierRules[];
+  monsterSpawns: { depthIndex: number; spawns: { monsterId: number; chance: number }[] }[];
+}
+
+export interface World {
+  id?: number;
+  name: string;
+  source_map_name?: string;
+  seed: number;
+  created_by_email?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WorldDetail extends World {
+  generation_rules: WorldGenerationRules;
+  /** Diff par rapport au terrain généré — clé "x,y" -> id de block ou null (case vidée). */
+  block_diff: Record<string, number | null>;
+}
+
+export interface CharacterState {
+  id?: number;
+  world?: number;
+  owner_email?: string;
+  hp: number;
+  position_x: number;
+  position_y: number;
+  /** {item_id (chaîne côté JSON) : quantité} */
+  inventory: Record<string, number>;
+  equipped_weapon_id: number | null;
   updated_at?: string;
 }
 
@@ -516,5 +553,28 @@ export class ApiService {
   }
   deletePortal(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/api/portals/${id}/`);
+  }
+
+  // ── Parties sauvegardées (Lot 7) ─────────────────────────────────────────
+
+  getWorlds(): Observable<World[]> {
+    return this.http.get<World[]>(`${this.base}/api/worlds/`);
+  }
+  getWorld(id: number): Observable<WorldDetail> {
+    return this.http.get<WorldDetail>(`${this.base}/api/worlds/${id}/`);
+  }
+  createWorld(data: { name: string; source_map_name: string; seed: number; generation_rules: WorldGenerationRules }): Observable<WorldDetail> {
+    return this.http.post<WorldDetail>(`${this.base}/api/worlds/`, data);
+  }
+  deleteWorld(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/worlds/${id}/`);
+  }
+  getCharacter(worldId: number): Observable<CharacterState> {
+    return this.http.get<CharacterState>(`${this.base}/api/worlds/${worldId}/character/`);
+  }
+  saveProgress(
+    worldId: number, payload: { block_diff?: Record<string, number | null>; character?: Partial<CharacterState> },
+  ): Observable<{ saved: boolean }> {
+    return this.http.post<{ saved: boolean }>(`${this.base}/api/worlds/${worldId}/save/`, payload);
   }
 }
