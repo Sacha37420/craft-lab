@@ -7,6 +7,8 @@ import { ProjectilesComponent } from './pages/catalogue/projectiles/projectiles.
 import { ArtifactsComponent } from './pages/catalogue/artifacts/artifacts.component';
 import { ToolsComponent } from './pages/catalogue/tools/tools.component';
 import { StatusEffectsComponent } from './pages/catalogue/status-effects/status-effects.component';
+import { MonstersComponent } from './pages/catalogue/monsters/monsters.component';
+import { MapsComponent } from './pages/catalogue/maps/maps.component';
 import { ParametrageComponent } from './pages/parametrage/parametrage.component';
 
 export const routes: Routes = [
@@ -18,6 +20,8 @@ export const routes: Routes = [
   { path: 'catalogue/artefacts',     component: ArtifactsComponent },
   { path: 'catalogue/outils',        component: ToolsComponent },
   { path: 'catalogue/effets-statut', component: StatusEffectsComponent },
+  { path: 'catalogue/monstres',      component: MonstersComponent },
+  { path: 'catalogue/cartes',        component: MapsComponent },
   { path: 'parametrage', component: ParametrageComponent },
   { path: '**',      redirectTo: '' },
 ];

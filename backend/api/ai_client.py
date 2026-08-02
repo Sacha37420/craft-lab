@@ -19,6 +19,16 @@ from .models import AIProviderConfig
 DEFAULT_MODELS = {
     'claude': 'claude-opus-5',
     'mistral': 'mistral-large-latest',
+    # Fournisseurs image (Lot 3, cf. image_client.py) — n'appellent jamais
+    # complete_json()/_CALLERS (sortie binaire, pas JSON), seulement
+    # _config() pour la résolution clé/modèle, partagée avec les
+    # fournisseurs texte. Le modèle image de Mistral (mistral-medium-latest,
+    # seul modèle à exposer l'outil image_generation) diffère de son modèle
+    # texte ci-dessus — image_client.py ne se fie donc PAS à cette entrée
+    # pour 'mistral', uniquement à celles-ci pour gemini/openai (un seul
+    # usage possible chacun, pas d'ambiguïté).
+    'gemini': 'gemini-2.5-flash-image',
+    'openai': 'gpt-image-2',
 }
 
 MAX_TOKENS = 16000

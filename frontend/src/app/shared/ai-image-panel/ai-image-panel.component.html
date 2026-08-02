@@ -1,0 +1,59 @@
+<h4>Icône</h4>
+
+@if (currentIconUrl()) {
+  <div class="ai-image-current">
+    <img [src]="currentIconSrc" alt="" class="ai-image-thumb" />
+    <span class="hint">Icône actuelle</span>
+  </div>
+}
+
+<div class="ai-panel">
+  <div class="form-group">
+    <label>Description de l'image</label>
+    <textarea [(ngModel)]="prompt" name="imagePrompt" rows="3"></textarea>
+  </div>
+
+  <div class="ai-panel-controls">
+    <select [(ngModel)]="provider" name="imageProvider">
+      <option value="gemini">Gemini</option>
+      <option value="mistral">Mistral</option>
+      <option value="openai">OpenAI</option>
+    </select>
+    <button type="button" class="btn btn-secondary btn-sm" [disabled]="loading() || !prompt.trim()" (click)="generate()">
+      {{ loading() ? 'Génération…' : (image() ? '↻ Régénérer' : "✨ Générer avec l'IA") }}
+    </button>
+    <button type="button" class="btn btn-secondary btn-sm" [disabled]="!prompt.trim()" (click)="copyPrompt()">
+      {{ copied() ? 'Copié !' : 'Copier le prompt' }}
+    </button>
+  </div>
+  <p class="hint">
+    Ou générez l'image avec un autre outil à partir de ce prompt, puis importez le fichier obtenu ci-dessous.
+  </p>
+
+  @if (needsConfig()) {
+    <p class="hint">
+      Aucune clé configurée pour ce fournisseur —
+      <a routerLink="/parametrage">configurez-la dans Paramétrage</a>.
+    </p>
+  } @else if (error()) {
+    <div class="alert alert-danger">{{ error() }}</div>
+  }
+
+  @if (image()) {
+    <div class="ai-suggestion">
+      <img [src]="previewSrc" alt="Aperçu généré" class="ai-image-thumb ai-image-preview" />
+      <div class="ai-panel-actions">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="discard()">Ignorer</button>
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="applying()" (click)="useImage()">
+          {{ applying() ? 'Envoi…' : 'Utiliser cette image' }}
+        </button>
+      </div>
+    </div>
+  }
+
+  <div class="form-group ai-image-upload">
+    <label>Importer un fichier image</label>
+    <input type="file" accept="image/*" [disabled]="uploading()" (change)="uploadFile($event)" />
+    @if (uploading()) { <p class="hint">Envoi…</p> }
+  </div>
+</div>

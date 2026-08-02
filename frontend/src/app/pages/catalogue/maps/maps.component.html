@@ -1,0 +1,187 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Cartes</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Nouvelle carte</button>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="catalogue-grid">
+      @for (item of items(); track item.id) {
+        <div class="catalogue-card">
+          <div class="catalogue-card-header">
+            <strong>{{ item.name }}</strong>
+          </div>
+          <p class="catalogue-card-desc">{{ item.description || '—' }}</p>
+          <div class="catalogue-card-actions">
+            <button class="btn btn-secondary btn-sm" (click)="openMapDetail(item)">Paliers / Aperçu</button>
+            <button class="btn btn-secondary btn-sm" (click)="openEdit(item)">Modifier</button>
+            <button class="btn btn-danger btn-sm" (click)="deleteMap(item)">Supprimer</button>
+          </div>
+        </div>
+      }
+      @if (items().length === 0) {
+        <p class="empty-state">Aucune carte définie.</p>
+      }
+    </div>
+  }
+</div>
+
+@if (showMapModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editingMap() ? 'Modifier' : 'Nouvelle' }} carte</h3>
+      <form (ngSubmit)="saveMap()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="mapForm.name" name="name" required />
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="mapForm.description" name="description"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showMapDetail() && mapDetail()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <h3>{{ mapDetail()!.name }}</h3>
+
+      <h4>Paliers de profondeur</h4>
+      @if (tierError()) { <div class="alert alert-danger">{{ tierError() }}</div> }
+      @if (tiers().length === 0) {
+        <p class="hint">Aucun palier — ajoutez-en au moins un avant de générer un aperçu.</p>
+      } @else {
+        <ul class="child-list">
+          @for (tier of tiers(); track tier.id) {
+            <li>
+              <span>Palier {{ tier.depth_index }} — vide {{ tier.void_rate | percent }}</span>
+              <span>
+                <button type="button" class="btn btn-secondary btn-sm" (click)="openTierDetail(tier)">Taux</button>
+                <button type="button" class="btn btn-danger btn-sm" (click)="deleteTier(tier)">Retirer</button>
+              </span>
+            </li>
+          }
+        </ul>
+      }
+      <div class="inline-form">
+        <div class="form-group" style="flex: 0 0 110px;">
+          <label>Palier (index)</label>
+          <input type="number" min="0" [(ngModel)]="tierForm.depth_index" name="tierDepthIndex" />
+        </div>
+        <div class="form-group" style="flex: 0 0 110px;">
+          <label>Taux de vide</label>
+          <input type="number" min="0" max="1" step="0.05" [(ngModel)]="tierForm.void_rate" name="tierVoidRate" />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addTier()">+ Ajouter</button>
+      </div>
+
+      <h4>Aperçu de génération</h4>
+      <p class="hint">
+        Prototype (bruit 2D) pour vérifier à l'œil que les filons de blocks restent cohérents
+        d'un palier à l'autre — ne préjuge pas de l'algorithme définitif du moteur de jeu (Lot 6).
+      </p>
+      <div class="inline-form">
+        <div class="form-group" style="flex: 0 0 140px;">
+          <label>Seed</label>
+          <input type="number" [(ngModel)]="previewSeed" name="previewSeed" />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" [disabled]="previewLoading()" (click)="generatePreview()">
+          {{ previewLoading() ? 'Génération…' : (previewRows() ? '↻ Régénérer' : 'Générer un aperçu') }}
+        </button>
+      </div>
+      @if (previewError()) { <div class="alert alert-danger">{{ previewError() }}</div> }
+      @if (previewRows(); as rows) {
+        <div class="terrain-preview-wrap">
+          <app-terrain-preview [rows]="rows" />
+        </div>
+      }
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" (click)="close()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (showTierDetail() && tierDetail()) {
+  <div class="modal-backdrop" (click)="closeTierDetail()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Palier {{ tierDetail()!.depth_index }}</h3>
+
+      <h4>Taux de blocks</h4>
+      @if (blockRates().length === 0) {
+        <p class="hint">Aucun bloc défini pour ce palier.</p>
+      } @else {
+        <ul class="child-list">
+          @for (r of blockRates(); track r.id) {
+            <li>
+              <span>{{ r.block_name }} — {{ r.rate | percent }}</span>
+              <button type="button" class="btn btn-danger btn-sm" (click)="removeBlockRate(r.id!)">Retirer</button>
+            </li>
+          }
+        </ul>
+      }
+      <div class="inline-form">
+        <div class="form-group">
+          <label>Bloc</label>
+          <select [(ngModel)]="blockRateForm.block" name="blockRateBlock">
+            <option [ngValue]="null">— Choisir —</option>
+            @for (b of blocks(); track b.id) {
+              <option [ngValue]="b.id">{{ b.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-group" style="flex: 0 0 110px;">
+          <label>Taux</label>
+          <input type="number" min="0" max="1" step="0.05" [(ngModel)]="blockRateForm.rate" name="blockRateValue" />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addBlockRate()">+ Ajouter</button>
+      </div>
+
+      <h4>Chances de spawn de monstres</h4>
+      @if (monsterSpawns().length === 0) {
+        <p class="hint">Aucun monstre défini pour ce palier.</p>
+      } @else {
+        <ul class="child-list">
+          @for (s of monsterSpawns(); track s.id) {
+            <li>
+              <span>{{ s.monster_name }} — {{ s.spawn_chance | percent }}</span>
+              <button type="button" class="btn btn-danger btn-sm" (click)="removeMonsterSpawn(s.id!)">Retirer</button>
+            </li>
+          }
+        </ul>
+      }
+      <div class="inline-form">
+        <div class="form-group">
+          <label>Monstre</label>
+          <select [(ngModel)]="spawnForm.monster" name="spawnMonster">
+            <option [ngValue]="null">— Choisir —</option>
+            @for (m of monsters(); track m.id) {
+              <option [ngValue]="m.id">{{ m.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="form-group" style="flex: 0 0 110px;">
+          <label>Chance</label>
+          <input type="number" min="0" max="1" step="0.01" [(ngModel)]="spawnForm.spawn_chance" name="spawnChance" />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addMonsterSpawn()">+ Ajouter</button>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" (click)="closeTierDetail()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}

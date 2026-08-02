@@ -1,14 +1,17 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { KeycloakService } from './keycloak.service';
 
 interface EnvWindow {
-  __env?: { apiUrl?: string };
+  __env?: { apiUrl?: string; storageApiUrl?: string };
 }
 
 export type ItemCategory = 'block' | 'weapon' | 'projectile' | 'artifact' | 'tool';
-export type CatalogueCategoryPath = 'weapons' | 'projectiles' | 'artifacts' | 'tools' | 'blocks';
+export type CatalogueCategoryPath = 'weapons' | 'projectiles' | 'artifacts' | 'tools' | 'blocks' | 'monsters';
 export type CombatStyle = 'melee' | 'ranged' | 'magic' | 'summon';
+/** Catégories couvertes par l'assistant IA texte (Lot 2 + Lot 4) — pas de suggestion pour cartes/portails. */
+export type SuggestCategory = ItemCategory | 'monster';
 
 // ── Catalogue — Lot 1 ─────────────────────────────────────────────────────
 
@@ -17,6 +20,7 @@ export interface CatalogueItem {
   name: string;
   category: ItemCategory;
   icon_path: string;
+  icon_url?: string | null;
 }
 
 export interface StatusEffect {
@@ -61,6 +65,7 @@ interface CatalogueEntityBase {
   name: string;
   description?: string;
   icon_path?: string;
+  icon_url?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -94,9 +99,66 @@ export interface Block extends CatalogueEntityBase {
   contact_status_effect_name?: string | null;
 }
 
-// ── Assistant IA — Lot 2 ─────────────────────────────────────────────────
+// ── Catalogue — Lot 4 (monstres et cartes) ────────────────────────────────
 
-export type AIProvider = 'claude' | 'mistral';
+export interface MonsterSkill {
+  id?: number;
+  name: string;
+  description?: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface MonsterDrop {
+  id?: number;
+  dropped_item: number | null;
+  dropped_item_name?: string;
+  quantity: number;
+  chance: number;
+}
+
+export interface Monster extends CatalogueEntityBase {
+  level: number;
+  detection_range: number;
+  detection_condition: Record<string, unknown>;
+  attack_type: 'melee' | 'ranged' | 'magic';
+  attack_damage: number;
+  attack_rate: number;
+  movement_patterns: string[];
+}
+
+export interface GameMap {
+  id?: number;
+  name: string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface DepthTier {
+  id?: number;
+  game_map: number;
+  depth_index: number;
+  void_rate: number;
+}
+
+export interface DepthTierBlockRate {
+  id?: number;
+  block: number | null;
+  block_name?: string;
+  rate: number;
+}
+
+export interface DepthTierMonsterSpawn {
+  id?: number;
+  monster: number | null;
+  monster_name?: string;
+  spawn_chance: number;
+}
+
+// ── Assistant IA — Lot 2 (texte) / Lot 3 (image) ─────────────────────────
+
+export type AIProvider = 'claude' | 'mistral' | 'gemini' | 'openai';
+export type ImageProvider = 'gemini' | 'mistral' | 'openai';
 
 export interface AIProviderConfig {
   provider: AIProvider;
@@ -112,13 +174,37 @@ export interface CatalogueSuggestion {
   [stat: string]: unknown;
 }
 
+export interface GeneratedImage {
+  image_base64: string;
+  mime_type: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
+  private kc = inject(KeycloakService);
 
   private get base(): string {
     return (window as unknown as EnvWindow).__env?.apiUrl
       ?? 'http://localhost:8097';
+  }
+
+  private get storageApiUrl(): string {
+    return (window as unknown as EnvWindow).__env?.storageApiUrl
+      ?? 'http://localhost:8093';
+  }
+
+  /**
+   * URL absolue d'une icône stockée dans storage, utilisable telle quelle
+   * dans un <img [src]> — le JWT part en paramètre d'URL car ni une balise
+   * <img> ne peut poser d'en-tête Authorization (cf. api/authentication.py
+   * côté storage, fallback `?token=` ; patron déjà vérifié dans le lab par
+   * atelier-3d/arbre-genealogique, cf. ApiService.mediaUrl() de ces apps).
+   */
+  iconUrl(path: string | null | undefined): string {
+    if (!path) return '';
+    const token = this.kc.getToken();
+    return `${this.storageApiUrl}${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   }
 
   getMe(): Observable<unknown> {
@@ -153,6 +239,11 @@ export class ApiService {
   }
   deleteStatusEffect(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/api/status-effects/${id}/`);
+  }
+
+  /** Relit une entité par id — utilisé notamment après icon() pour rafraîchir icon_url sans recharger toute la liste. */
+  getEntity<T extends CatalogueEntityBase>(category: CatalogueCategoryPath, id: number): Observable<T> {
+    return this.http.get<T>(`${this.base}/api/${category}/${id}/`);
   }
 
   // ── Catalogue — recette de craft (1.1), commune aux 5 catégories ────────
@@ -280,10 +371,113 @@ export class ApiService {
     return this.http.put<AIProviderConfig>(`${this.base}/api/ai-config/${provider}/`, payload);
   }
   suggestCatalogueEntity(
-    category: ItemCategory, provider: AIProvider, partial: Record<string, unknown>,
+    category: SuggestCategory, provider: AIProvider, partial: Record<string, unknown>,
   ): Observable<CatalogueSuggestion> {
     return this.http.post<CatalogueSuggestion>(
       `${this.base}/api/catalogue-assistant/suggest/`, { category, provider, partial },
     );
+  }
+
+  // ── Assistant IA image — Lot 3 ───────────────────────────────────────────
+
+  generateImage(prompt: string, provider: ImageProvider): Observable<GeneratedImage> {
+    return this.http.post<GeneratedImage>(`${this.base}/api/image-assistant/generate/`, { prompt, provider });
+  }
+
+  /** Upload l'image choisie vers storage et l'associe à l'entité — jamais automatique, cf. AiImagePanelComponent. */
+  useGeneratedImage<T extends CatalogueEntityBase>(
+    category: CatalogueCategoryPath, id: number, image: GeneratedImage,
+  ): Observable<T> {
+    return this.http.post<T>(`${this.base}/api/${category}/${id}/icon/`, {
+      image_base64: image.image_base64, mime_type: image.mime_type,
+    });
+  }
+
+  /** Upload manuel d'un fichier local (image produite ailleurs) — même action que useGeneratedImage, en multipart. */
+  uploadIconFile<T extends CatalogueEntityBase>(
+    category: CatalogueCategoryPath, id: number, file: File,
+  ): Observable<T> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<T>(`${this.base}/api/${category}/${id}/icon/`, formData);
+  }
+
+  // ── Monstres (1.8) ────────────────────────────────────────────────────────
+
+  getMonsters(): Observable<Monster[]> {
+    return this.http.get<Monster[]>(`${this.base}/api/monsters/`);
+  }
+  createMonster(data: Partial<Monster>): Observable<Monster> {
+    return this.http.post<Monster>(`${this.base}/api/monsters/`, data);
+  }
+  updateMonster(id: number, data: Partial<Monster>): Observable<Monster> {
+    return this.http.patch<Monster>(`${this.base}/api/monsters/${id}/`, data);
+  }
+  deleteMonster(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/monsters/${id}/`);
+  }
+  getMonsterSkills(monsterId: number): Observable<MonsterSkill[]> {
+    return this.http.get<MonsterSkill[]>(`${this.base}/api/monsters/${monsterId}/skills/`);
+  }
+  addMonsterSkill(monsterId: number, data: MonsterSkill): Observable<MonsterSkill> {
+    return this.http.post<MonsterSkill>(`${this.base}/api/monsters/${monsterId}/skills/`, data);
+  }
+  removeMonsterSkill(monsterId: number, skillId: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/monsters/${monsterId}/skills/${skillId}/`);
+  }
+  getMonsterDrops(monsterId: number): Observable<MonsterDrop[]> {
+    return this.http.get<MonsterDrop[]>(`${this.base}/api/monsters/${monsterId}/drops/`);
+  }
+  addMonsterDrop(monsterId: number, data: MonsterDrop): Observable<MonsterDrop> {
+    return this.http.post<MonsterDrop>(`${this.base}/api/monsters/${monsterId}/drops/`, data);
+  }
+  removeMonsterDrop(monsterId: number, dropId: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/monsters/${monsterId}/drops/${dropId}/`);
+  }
+
+  // ── Cartes — génération par profondeur (1.9) ─────────────────────────────
+
+  getGameMaps(): Observable<GameMap[]> {
+    return this.http.get<GameMap[]>(`${this.base}/api/game-maps/`);
+  }
+  createGameMap(data: Partial<GameMap>): Observable<GameMap> {
+    return this.http.post<GameMap>(`${this.base}/api/game-maps/`, data);
+  }
+  updateGameMap(id: number, data: Partial<GameMap>): Observable<GameMap> {
+    return this.http.patch<GameMap>(`${this.base}/api/game-maps/${id}/`, data);
+  }
+  deleteGameMap(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/game-maps/${id}/`);
+  }
+
+  getDepthTiers(gameMapId: number): Observable<DepthTier[]> {
+    return this.http.get<DepthTier[]>(`${this.base}/api/depth-tiers/?game_map=${gameMapId}`);
+  }
+  createDepthTier(data: DepthTier): Observable<DepthTier> {
+    return this.http.post<DepthTier>(`${this.base}/api/depth-tiers/`, data);
+  }
+  updateDepthTier(id: number, data: Partial<DepthTier>): Observable<DepthTier> {
+    return this.http.patch<DepthTier>(`${this.base}/api/depth-tiers/${id}/`, data);
+  }
+  deleteDepthTier(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/depth-tiers/${id}/`);
+  }
+  getDepthTierBlockRates(tierId: number): Observable<DepthTierBlockRate[]> {
+    return this.http.get<DepthTierBlockRate[]>(`${this.base}/api/depth-tiers/${tierId}/block-rates/`);
+  }
+  addDepthTierBlockRate(tierId: number, data: DepthTierBlockRate): Observable<DepthTierBlockRate> {
+    return this.http.post<DepthTierBlockRate>(`${this.base}/api/depth-tiers/${tierId}/block-rates/`, data);
+  }
+  removeDepthTierBlockRate(tierId: number, rateId: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/depth-tiers/${tierId}/block-rates/${rateId}/`);
+  }
+  getDepthTierMonsterSpawns(tierId: number): Observable<DepthTierMonsterSpawn[]> {
+    return this.http.get<DepthTierMonsterSpawn[]>(`${this.base}/api/depth-tiers/${tierId}/monster-spawns/`);
+  }
+  addDepthTierMonsterSpawn(tierId: number, data: DepthTierMonsterSpawn): Observable<DepthTierMonsterSpawn> {
+    return this.http.post<DepthTierMonsterSpawn>(`${this.base}/api/depth-tiers/${tierId}/monster-spawns/`, data);
+  }
+  removeDepthTierMonsterSpawn(tierId: number, spawnId: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/depth-tiers/${tierId}/monster-spawns/${spawnId}/`);
   }
 }

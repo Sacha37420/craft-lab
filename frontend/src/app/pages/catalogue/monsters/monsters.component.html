@@ -1,0 +1,178 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Monstres</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Nouveau monstre</button>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="catalogue-grid">
+      @for (item of items(); track item.id) {
+        <div class="catalogue-card">
+          <div class="catalogue-card-header">
+            <div class="catalogue-card-title">
+              @if (item.icon_url) { <img [src]="api.iconUrl(item.icon_url)" alt="" class="catalogue-card-icon" /> }
+              <strong>{{ item.name }}</strong>
+            </div>
+            <span class="badge badge-orange">Niv. {{ item.level }}</span>
+          </div>
+          <p class="catalogue-card-desc">
+            {{ item.description || '—' }}<br />
+            {{ item.attack_type }} · {{ item.attack_damage }} dégâts · détection {{ item.detection_range }}
+          </p>
+          <div class="catalogue-card-actions">
+            <button class="btn btn-secondary btn-sm" (click)="openDetail(item)">Compétences / Drops</button>
+            <button class="btn btn-secondary btn-sm" (click)="openEdit(item)">Modifier</button>
+            <button class="btn btn-danger btn-sm" (click)="delete(item)">Supprimer</button>
+          </div>
+        </div>
+      }
+      @if (items().length === 0) {
+        <p class="empty-state">Aucun monstre défini.</p>
+      }
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ editing() ? 'Modifier' : 'Nouveau' }} monstre</h3>
+
+      <app-ai-suggest-panel category="monster" [partial]="form" (apply)="onAiSuggestion($event)" />
+
+      <form (ngSubmit)="save()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="form.name" name="name" required />
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea [(ngModel)]="form.description" name="description"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Niveau *</label>
+            <input type="number" min="1" [(ngModel)]="form.level" name="level" required />
+          </div>
+          <div class="form-group">
+            <label>Portée de détection *</label>
+            <input type="number" step="0.1" min="0" [(ngModel)]="form.detection_range" name="detection_range" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Type d'attaque *</label>
+            <select [(ngModel)]="form.attack_type" name="attack_type" required>
+              @for (t of attackTypes; track t.value) {
+                <option [value]="t.value">{{ t.label }}</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Dégâts *</label>
+            <input type="number" step="0.1" min="0" [(ngModel)]="form.attack_damage" name="attack_damage" required />
+          </div>
+          <div class="form-group">
+            <label>Cadence *</label>
+            <input type="number" step="0.1" min="0" [(ngModel)]="form.attack_rate" name="attack_rate" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Déplacements</label>
+          <div class="form-checks">
+            @for (m of movementPatterns; track m.value) {
+              <label>
+                <input type="checkbox" [checked]="(form.movement_patterns ?? []).includes(m.value)"
+                       (change)="toggleMovement(m.value)" />
+                {{ m.label }}
+              </label>
+            }
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (showDetail() && detail()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>{{ detail()!.name }}</h3>
+
+      <app-ai-image-panel category="monsters" [itemId]="detail()!.id!" [currentIconUrl]="detail()!.icon_url"
+                           [promptSeed]="imagePromptSeed(detail()!)" (applied)="onIconApplied()" />
+
+      <h4>Compétences</h4>
+      @if (skillError()) { <div class="alert alert-danger">{{ skillError() }}</div> }
+      @if (skills().length === 0) {
+        <p class="hint">Aucune compétence — ce monstre attaque uniquement au corps à corps/distance de base.</p>
+      } @else {
+        <ul class="child-list">
+          @for (s of skills(); track s.id) {
+            <li>
+              <span>{{ s.name }} — <code class="mono">{{ s.parameters | json }}</code></span>
+              <button type="button" class="btn btn-danger btn-sm" (click)="removeSkill(s.id!)">Retirer</button>
+            </li>
+          }
+        </ul>
+      }
+      <div class="inline-form">
+        <div class="form-group">
+          <label>Nom</label>
+          <input [(ngModel)]="skillForm.name" name="skillName" />
+        </div>
+        <div class="form-group">
+          <label>Paramètres (JSON)</label>
+          <input [(ngModel)]="skillParamsText" name="skillParams" placeholder='{"radius": 5}' />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addSkill()">+ Ajouter</button>
+      </div>
+
+      <h4>Table de drop</h4>
+      @if (drops().length === 0) {
+        <p class="hint">Aucun drop défini.</p>
+      } @else {
+        <ul class="child-list">
+          @for (drop of drops(); track drop.id) {
+            <li>
+              <span>{{ drop.quantity }}x {{ drop.dropped_item_name }} ({{ drop.chance | percent }})</span>
+              <button type="button" class="btn btn-danger btn-sm" (click)="removeDrop(drop.id!)">Retirer</button>
+            </li>
+          }
+        </ul>
+      }
+      <div class="inline-form">
+        <div class="form-group">
+          <label>Objet dropé</label>
+          <select [(ngModel)]="dropForm.dropped_item" name="dropItem">
+            <option [ngValue]="null">— Choisir —</option>
+            @for (it of allItems(); track it.id) {
+              <option [ngValue]="it.id">{{ it.name }} ({{ it.category }})</option>
+            }
+          </select>
+        </div>
+        <div class="form-group" style="flex: 0 0 90px;">
+          <label>Quantité</label>
+          <input type="number" min="1" [(ngModel)]="dropForm.quantity" name="dropQuantity" />
+        </div>
+        <div class="form-group" style="flex: 0 0 110px;">
+          <label>Chance (0-1)</label>
+          <input type="number" min="0" max="1" step="0.05" [(ngModel)]="dropForm.chance" name="dropChance" />
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addDrop()">+ Ajouter</button>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" (click)="close()">Fermer</button>
+      </div>
+    </div>
+  </div>
+}

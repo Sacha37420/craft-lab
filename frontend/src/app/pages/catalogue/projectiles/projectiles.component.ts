@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, CatalogueItem, CatalogueSuggestion, Projectile } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
+import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 
 /**
  * Projectiles (cahier des charges 1.3) — utilisés par les armes à distance ;
@@ -12,11 +13,11 @@ import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-sug
 @Component({
   selector: 'app-projectiles',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent],
+  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './projectiles.component.html',
 })
 export class ProjectilesComponent implements OnInit {
-  private api = inject(ApiService);
+  protected api = inject(ApiService);
 
   items = signal<Projectile[]>([]);
   allItems = signal<CatalogueItem[]>([]);
@@ -68,6 +69,16 @@ export class ProjectilesComponent implements OnInit {
     this.detail.set(item);
     this.showDetail.set(true);
     this.refreshLookups();
+  }
+
+  imagePromptSeed(item: Projectile): string {
+    return item.description ? `${item.name} : ${item.description}` : item.name;
+  }
+
+  onIconApplied(): void {
+    this.load();
+    const id = this.detail()?.id;
+    if (id) this.api.getEntity<Projectile>('projectiles', id).subscribe({ next: p => this.detail.set(p) });
   }
 
   onAiSuggestion(s: CatalogueSuggestion): void {

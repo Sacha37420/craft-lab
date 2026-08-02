@@ -4,6 +4,7 @@ import { PercentPipe } from '@angular/common';
 import { ApiService, Block, BlockDrop, CatalogueItem, CatalogueSuggestion, StatusEffect } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
+import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 
 /**
  * Blocks de base et liquides (cahier des charges 1.6/1.7) — un seul modèle :
@@ -13,11 +14,11 @@ import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-sug
 @Component({
   selector: 'app-blocks',
   standalone: true,
-  imports: [FormsModule, PercentPipe, RecipeEditorComponent, AiSuggestPanelComponent],
+  imports: [FormsModule, PercentPipe, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './blocks.component.html',
 })
 export class BlocksComponent implements OnInit {
-  private api = inject(ApiService);
+  protected api = inject(ApiService);
 
   items = signal<Block[]>([]);
   allItems = signal<CatalogueItem[]>([]);
@@ -92,6 +93,16 @@ export class BlocksComponent implements OnInit {
     this.showDetail.set(true);
     this.loadDrops();
     this.refreshLookups();
+  }
+
+  imagePromptSeed(item: Block): string {
+    return item.description ? `${item.name} : ${item.description}` : item.name;
+  }
+
+  onIconApplied(): void {
+    this.load();
+    const id = this.detail()?.id;
+    if (id) this.api.getEntity<Block>('blocks', id).subscribe({ next: b => this.detail.set(b) });
   }
 
   loadDrops(): void {

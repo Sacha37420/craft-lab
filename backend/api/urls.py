@@ -7,8 +7,12 @@ from .views import (
     BlockViewSet,
     CatalogueAssistantView,
     DepartmentListView,
+    DepthTierViewSet,
+    GameMapViewSet,
+    ImageAssistantView,
     ItemViewSet,
     MeView,
+    MonsterViewSet,
     ProjectileViewSet,
     StatusEffectViewSet,
     ToolViewSet,
@@ -24,6 +28,9 @@ router.register('projectiles', ProjectileViewSet, basename='projectile')
 router.register('artifacts', ArtifactViewSet, basename='artifact')
 router.register('tools', ToolViewSet, basename='tool')
 router.register('blocks', BlockViewSet, basename='block')
+router.register('monsters', MonsterViewSet, basename='monster')
+router.register('game-maps', GameMapViewSet, basename='game-map')
+router.register('depth-tiers', DepthTierViewSet, basename='depth-tier')
 
 urlpatterns = [
     path('me/',          MeView.as_view()),
@@ -31,5 +38,6 @@ urlpatterns = [
     path('users/',       UserListView.as_view()),
     path('ai-config/<str:provider>/', AIProviderConfigView.as_view()),
     path('catalogue-assistant/suggest/', CatalogueAssistantView.as_view()),
+    path('image-assistant/generate/', ImageAssistantView.as_view()),
     path('', include(router.urls)),
 ]

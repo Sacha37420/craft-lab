@@ -5,6 +5,16 @@ from .fields import EncryptedTextField
 PROVIDER_CHOICES = [
     ('claude', 'Claude'),
     ('mistral', 'Mistral'),
+    # Fournisseurs image (Lot 3, cf. api/image_client.py) — l'utilisateur
+    # choisit celui qu'il configure. Aucun n'est réellement gratuit sans
+    # carte au moment du choix (2026-08-02) : Gemini demande un compte de
+    # facturation Google lié (reste à 0$ dans le quota, mais carte requise),
+    # Mistral facture 0,10$/image, OpenAI n'a pas d'offre gratuite. Même
+    # AIProviderConfig que les fournisseurs texte : une clé chiffrée par
+    # utilisateur, jamais partagée. `mistral` sert donc double emploi (texte
+    # ET image) — cf. image_client.py pour la résolution de modèle par tâche.
+    ('gemini', 'Gemini (Google) — images'),
+    ('openai', 'OpenAI — images'),
 ]
 
 

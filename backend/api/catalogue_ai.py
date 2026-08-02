@@ -10,12 +10,14 @@ frontend de l'appliquer (ou non) au formulaire avant un enregistrement
 explicite de l'utilisateur — même principe que l'assistant de robot-lab.
 """
 from .ai_client import complete_json
-from .models import Artifact, Block, Projectile, Tool, Weapon
+from .models import Artifact, Block, Monster, Projectile, Tool, Weapon
 
-# Pour chaque catégorie éditable au Lot 1 : les champs de stats que l'IA peut
+# Pour chaque catégorie éditable : les champs de stats que l'IA peut
 # proposer, leur documentation (injectée dans le prompt) et le sous-schéma
-# JSON correspondant. Armes/projectiles/artefacts/outils/blocks seulement —
-# monstres/cartes/portails n'ont pas encore de page d'édition (Lots 4-5).
+# JSON correspondant. Armes/projectiles/artefacts/outils/blocks/monstres —
+# cartes/portails n'ont pas de suggestion IA (pas de « stats » simples à
+# proposer, cf. to_do_craft_lab.md Lot 4 : la carte est un jeu de règles par
+# palier, pas une entité avec nom/description/stats comparable aux autres).
 CATEGORY_SPECS = {
     'block': {
         'label': 'block',
@@ -80,6 +82,30 @@ CATEGORY_SPECS = {
         'schema_props': {},
         'required': [],
     },
+    'monster': {
+        'label': 'monstre',
+        'model': Monster,
+        # Monster n'est pas un Item (cf. models.py) : name/description vivent
+        # directement dessus, pas de recette — `standalone` bascule
+        # _catalogue_excerpt() sur le chemin sans `.item`.
+        'standalone': True,
+        'fields_doc': (
+            "- level (entier) : niveau de difficulté/puissance relative\n"
+            "- detection_range (nombre) : portée de détection d'un personnage "
+            "ennemi\n"
+            "- attack_type : une valeur parmi melee/ranged/magic\n"
+            "- attack_damage (nombre) : dégâts par attaque\n"
+            "- attack_rate (nombre) : cadence d'attaque"
+        ),
+        'schema_props': {
+            'level': {'type': 'integer'},
+            'detection_range': {'type': 'number'},
+            'attack_type': {'type': 'string', 'enum': ['melee', 'ranged', 'magic']},
+            'attack_damage': {'type': 'number'},
+            'attack_rate': {'type': 'number'},
+        },
+        'required': ['level', 'detection_range', 'attack_type', 'attack_damage', 'attack_rate'],
+    },
 }
 
 
@@ -91,6 +117,15 @@ def _catalogue_excerpt(category: str, limit: int = 15) -> str:
     page vide).
     """
     spec = CATEGORY_SPECS[category]
+    if spec.get('standalone'):
+        rows = spec['model'].objects.order_by('-created_at')[:limit]
+        lines = []
+        for row in rows:
+            stats = {field: getattr(row, field) for field in spec['schema_props']}
+            description = row.description or '(sans description)'
+            lines.append(f"- {row.name} : {description} — {stats}")
+        return '\n'.join(lines) if lines else '(catalogue vide pour cette catégorie pour le moment)'
+
     rows = spec['model'].objects.select_related('item').order_by('-item__created_at')[:limit]
     lines = []
     for row in rows:

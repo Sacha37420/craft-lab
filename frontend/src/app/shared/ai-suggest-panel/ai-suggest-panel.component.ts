@@ -1,15 +1,16 @@
 import { Component, EventEmitter, inject, input, Output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { ApiService, AIProvider, CatalogueSuggestion, ItemCategory } from '../../core/api.service';
+import { ApiService, AIProvider, CatalogueSuggestion, SuggestCategory } from '../../core/api.service';
 
 /**
  * Bouton « Suggérer avec l'IA » + aperçu de la proposition, réutilisé sur les
- * 5 pages d'édition du catalogue (Lot 2, cahier des charges section 2).
- * N'applique jamais rien tout seul au formulaire — la page parente reçoit la
- * suggestion via `(apply)` et décide quoi en faire, l'utilisateur garde la
- * main pour éditer/annuler avant d'enregistrer (même principe que
- * l'assistant de robot-lab : proposer, jamais persister directement).
+ * pages d'édition du catalogue (Lot 2 pour les 5 catégories d'objets, Lot 4
+ * pour les monstres — cf. cahier des charges section 2). N'applique jamais
+ * rien tout seul au formulaire — la page parente reçoit la suggestion via
+ * `(apply)` et décide quoi en faire, l'utilisateur garde la main pour
+ * éditer/annuler avant d'enregistrer (même principe que l'assistant de
+ * robot-lab : proposer, jamais persister directement).
  */
 @Component({
   selector: 'app-ai-suggest-panel',
@@ -20,7 +21,7 @@ import { ApiService, AIProvider, CatalogueSuggestion, ItemCategory } from '../..
 export class AiSuggestPanelComponent {
   private api = inject(ApiService);
 
-  category = input.required<ItemCategory>();
+  category = input.required<SuggestCategory>();
   partial = input<Record<string, unknown>>({});
 
   @Output() apply = new EventEmitter<CatalogueSuggestion>();

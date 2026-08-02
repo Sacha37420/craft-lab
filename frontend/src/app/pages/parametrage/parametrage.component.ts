@@ -16,8 +16,10 @@ interface ProviderCard {
 }
 
 const PROVIDERS: Array<Pick<ProviderCard, 'provider' | 'label' | 'modelPlaceholder'>> = [
-  { provider: 'claude', label: 'Claude (Anthropic)', modelPlaceholder: 'ex. claude-opus-5' },
-  { provider: 'mistral', label: 'Mistral', modelPlaceholder: 'ex. mistral-large-latest' },
+  { provider: 'claude', label: 'Claude (Anthropic) — texte', modelPlaceholder: 'ex. claude-opus-5' },
+  { provider: 'mistral', label: 'Mistral — texte + images', modelPlaceholder: 'ex. mistral-large-latest' },
+  { provider: 'gemini', label: 'Gemini (Google) — images', modelPlaceholder: 'ex. gemini-2.5-flash-image' },
+  { provider: 'openai', label: 'OpenAI — images', modelPlaceholder: 'ex. gpt-image-2' },
 ];
 
 /**

@@ -4,6 +4,7 @@ import { JsonPipe } from '@angular/common';
 import { Artifact, ArtifactEffect, ApiService, CatalogueItem, CatalogueSuggestion } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
+import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 
 const EFFECT_TYPES: { value: string; label: string }[] = [
   { value: 'hp_boost', label: 'PV' },
@@ -24,11 +25,11 @@ const EFFECT_TYPES: { value: string; label: string }[] = [
 @Component({
   selector: 'app-artifacts',
   standalone: true,
-  imports: [FormsModule, JsonPipe, RecipeEditorComponent, AiSuggestPanelComponent],
+  imports: [FormsModule, JsonPipe, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './artifacts.component.html',
 })
 export class ArtifactsComponent implements OnInit {
-  private api = inject(ApiService);
+  protected api = inject(ApiService);
 
   readonly effectTypes = EFFECT_TYPES;
 
@@ -88,6 +89,16 @@ export class ArtifactsComponent implements OnInit {
     this.showDetail.set(true);
     this.loadEffects();
     this.refreshLookups();
+  }
+
+  imagePromptSeed(item: Artifact): string {
+    return item.description ? `${item.name} : ${item.description}` : item.name;
+  }
+
+  onIconApplied(): void {
+    this.load();
+    const id = this.detail()?.id;
+    if (id) this.api.getEntity<Artifact>('artifacts', id).subscribe({ next: a => this.detail.set(a) });
   }
 
   loadEffects(): void {

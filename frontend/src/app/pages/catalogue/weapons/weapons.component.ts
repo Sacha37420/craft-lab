@@ -3,16 +3,17 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, CatalogueItem, CatalogueSuggestion, Weapon, WeaponProjectileLink } from '../../../core/api.service';
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
+import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 
 /** Armes (cahier des charges 1.2) — sous-catégories mêlée/distance/magique/invocation. */
 @Component({
   selector: 'app-weapons',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent],
+  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './weapons.component.html',
 })
 export class WeaponsComponent implements OnInit {
-  private api = inject(ApiService);
+  protected api = inject(ApiService);
 
   items = signal<Weapon[]>([]);
   allItems = signal<CatalogueItem[]>([]);
@@ -83,6 +84,16 @@ export class WeaponsComponent implements OnInit {
     this.showDetail.set(true);
     this.loadLinks();
     this.refreshLookups();
+  }
+
+  imagePromptSeed(item: Weapon): string {
+    return item.description ? `${item.name} : ${item.description}` : item.name;
+  }
+
+  onIconApplied(): void {
+    this.load();
+    const id = this.detail()?.id;
+    if (id) this.api.getEntity<Weapon>('weapons', id).subscribe({ next: w => this.detail.set(w) });
   }
 
   loadLinks(): void {

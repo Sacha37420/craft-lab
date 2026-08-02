@@ -13,7 +13,10 @@
       @for (item of items(); track item.id) {
         <div class="catalogue-card">
           <div class="catalogue-card-header">
-            <strong>{{ item.name }}</strong>
+            <div class="catalogue-card-title">
+              @if (item.icon_url) { <img [src]="api.iconUrl(item.icon_url)" alt="" class="catalogue-card-icon" /> }
+              <strong>{{ item.name }}</strong>
+            </div>
             <span class="badge badge-orange">{{ item.damage }} dégâts</span>
           </div>
           <p class="catalogue-card-desc">{{ item.description || '—' }}</p>
@@ -69,6 +72,10 @@
   <div class="modal-backdrop" (click)="close()">
     <div class="modal" (click)="$event.stopPropagation()">
       <h3>{{ detail()!.name }}</h3>
+
+      <app-ai-image-panel category="projectiles" [itemId]="detail()!.id!" [currentIconUrl]="detail()!.icon_url"
+                           [promptSeed]="imagePromptSeed(detail()!)" (applied)="onIconApplied()" />
+
       <app-recipe-editor category="projectiles" [itemId]="detail()!.id!" [allItems]="allItems()" />
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" (click)="close()">Fermer</button>
