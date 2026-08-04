@@ -31,8 +31,8 @@ const MAX_LIVE_MONSTERS = 12;
 /** Simplification documentée : tout monstre attaque au contact, quel que soit son attack_type —
  * aucune donnée de projectile n'est associée à un monstre dans le schéma actuel (WeaponProjectile
  * ne lie que armes→projectiles). Modéliser un vrai monstre "à distance" nécessiterait d'étendre le
- * schéma, hors périmètre du 6b. */
-const MONSTER_ATTACK_RANGE_TILES = 1.2;
+ * schéma, hors périmètre du 6b. Portée réglable par monstre (Monster.attack_range_tiles), ceci
+ * n'était que l'ancienne valeur par défaut fixe, désormais uniquement le défaut du modèle Django. */
 const DEFAULT_MELEE_RANGE_TILES = 1.5;
 const DEFAULT_RANGED_RANGE_TILES = 6;
 const BARE_HANDS_DAMAGE = 1;
@@ -41,6 +41,25 @@ const BARE_HANDS_RATE = 1;
 /** Lot 8b — cadence de diffusion de l'état des monstres par l'hôte (position/PV), pas à chaque
  * frame : suffisant pour un mouvement lisse côté clients non-hôtes sans saturer le relais. */
 const MONSTER_BROADCAST_INTERVAL_MS = 200;
+
+/** Les 5 skins complets du pack Kenney "Platformer Characters" (assets/sprite-library/characters/)
+ * — mêmes 5 poses pour chacun (idle/walk1/walk2/jump/fall), cf. LICENSE.txt à cet endroit. */
+export const PLAYER_SKINS = ['adventurer', 'female', 'player', 'soldier', 'zombie'];
+type PlayerPose = 'idle' | 'walk1' | 'walk2' | 'jump' | 'fall';
+const playerFrameKey = (skin: string, pose: PlayerPose): string => `player-${skin}-${pose}`;
+const blockIconKey = (id: number): string => `block-icon-${id}`;
+/** Clé de texture stable pour une pièce de montage de monstre — dérivée de l'id SpriteAsset (Lot 10 ;
+ * deux monstres référençant le même asset partagent la même texture, jamais rechargée deux fois). */
+const rigPartKey = (assetId: number): string => `rig-part-${assetId}`;
+/** Anti-retrigger pour une pièce collidesTerrain (une arme réutilise plutôt le cooldown d'attaque
+ * du monstre, def.attackRate) — un contact immobile contre un mur ne doit déclencher la compétence
+ * 'block-hit' qu'une fois toutes les ~500ms, pas à 60 im/s tant qu'il persiste. */
+const RIG_TERRAIN_HIT_COOLDOWN_MS = 500;
+/** Seuil de déplacement (px) entre deux frames d'animation pour considérer un monstre "en marche"
+ * plutôt qu'"immobile" (cf. tickRigPlayback) — dérivé de la position plutôt que de body.velocity
+ * pour fonctionner identiquement côté hôte (vraie physique) et non-hôte (positions reçues du
+ * réseau, jamais de vitesse). */
+const RIG_MOVING_THRESHOLD_PX = 0.5;
 
 export interface InitialCharacterState {
   hp: number;
@@ -66,6 +85,11 @@ export interface GameSceneConfig {
    * (dans ce cas le joueur apparaît au point de spawn trouvé automatiquement, avec le kit de
    * départ habituel, cf. giveStarterTools). */
   initialCharacter?: InitialCharacterState;
+  /** Préfixe du skin joueur (assets/sprite-library/characters/<préfixe>_<pose>.png) — toujours
+   * présent (défaut 'adventurer'), indépendant de initialCharacter : un choix d'apparence, pas de
+   * l'avancement de la partie. Les 5 skins sont TOUS préchargés (cf. preload()), pas seulement
+   * celui-ci — change de skin en jeu = simple changement de texture, jamais un chargement à chaud. */
+  playerSkin: string;
   onInventoryChange: (entries: InventoryEntry[]) => void;
   onMiningProgress: (progress: number | null, blockName: string | null) => void;
   onMessage: (text: string) => void;
@@ -78,11 +102,83 @@ export interface GameSceneConfig {
 
 interface TileXY { x: number; y: number; }
 
+/** Pièce du montage, résolue avec sa texture — plus aucune formule d'oscillation propre à la
+ * pièce : la pose (dx/dy/rotation) à chaque instant vient de la compétence en cours de lecture
+ * (cf. LiveMonster.activePlayback), jamais d'un état stocké ici. */
+interface RigPartInstance {
+  id: string;
+  obj: Phaser.GameObjects.Sprite;
+  /** Position locale de repos (origine (0.5,0), cf. buildRiggedMonster) — toute pose de compétence
+   * est un décalage PAR RAPPORT à celle-ci, jamais une position absolue. */
+  baseX: number;
+  baseY: number;
+  restTextureKey: string;
+  /** Empreinte de la pièce (taille d'affichage réelle, avant toute rotation) — pour les tests de
+   * recouvrement AABB de tickRigCollisions, jamais recalculée par frame. */
+  width: number;
+  height: number;
+  isWeapon: boolean;
+  collidesTerrain: boolean;
+  /** Anti-retrigger propre à CETTE pièce pour collidesTerrain (isWeapon réutilise le cooldown
+   * d'attaque du monstre, m.attackCooldownMs, partagé par toutes ses pièces armées). */
+  terrainCooldownUntil: number;
+}
+
+interface RigSkillPoseRuntime {
+  dx: number;
+  dy: number;
+  rotationDeg: number;
+  tempTextureKey?: string;
+}
+
+interface RigSkillStepRuntime {
+  durationMs: number;
+  poses: Map<string, RigSkillPoseRuntime>;
+}
+
+/** Chorégraphie résolue (textures des images temporaires préchargées) — cf. RigSkill côté
+ * api.service.ts pour la sémantique complète des 5 types. */
+interface RigSkillRuntime {
+  id: string;
+  type: 'idle' | 'move-lateral' | 'jump' | 'attack' | 'block-hit';
+  steps: RigSkillStepRuntime[];
+}
+
+/** Lecture en cours d'une compétence sur un montage — `fromPoses` fige la pose exacte affichée au
+ * moment où l'étape courante a commencé (celle de l'étape précédente, ou le repos pour la
+ * première), point de départ de l'interpolation vers `steps[stepIndex].poses`. */
+interface RigPlaybackState {
+  skill: RigSkillRuntime;
+  loop: boolean;
+  stepIndex: number;
+  stepStartMs: number;
+  fromPoses: Map<string, RigSkillPoseRuntime>;
+}
+
 interface LiveMonster {
   /** Identifiant attribué par l'hôte à la création (cf. spawnMonster/applyMonsterSpawn) — sert de
    * clé de correspondance entre clients, indépendante de l'id catalogue (WorldMonsterDef.id). */
   networkId: string;
-  sprite: Phaser.GameObjects.Sprite;
+  /** Sprite unique (icône plate classique) OU Container (montage par pièces, cf. rigParts) —
+   * .x/.y/.setPosition/.destroy/.body/.getBounds fonctionnent à l'identique dans les deux cas
+   * (cf. createMonsterEntity, qui appelle setSize()/physics.add.existing() sur le Container pour
+   * que getBounds()/le corps physique restent cohérents avec un vrai Sprite). */
+  sprite: Phaser.GameObjects.Sprite | Phaser.GameObjects.Container;
+  /** Présent seulement pour un monstre monté par pièces. */
+  rigParts?: RigPartInstance[];
+  /** Compétences résolues du montage (cf. RigSkillRuntime) — vide si aucune définie. */
+  skills?: RigSkillRuntime[];
+  /** Lecture en cours (cf. RigPlaybackState) — null quand aucune compétence ne joue (les pièces
+   * restent alors à leur pose de repos). */
+  activePlayback?: RigPlaybackState | null;
+  /** Dernière position connue (repère la marche par delta de position plutôt que par vitesse —
+   * cf. tickRigPlayback — pour fonctionner identiquement côté hôte, qui simule une vraie physique,
+   * et côté non-hôte, qui ne reçoit que des positions du réseau, jamais de vitesse). */
+  lastKnownX?: number;
+  /** Horodatage du dernier déplacement significatif détecté (cf. tickRigPlayback) — "en marche" tant
+   * que récent, plutôt qu'un booléen instantané qui flickerait entre deux diffusions réseau
+   * espacées de MONSTER_BROADCAST_INTERVAL_MS côté non-hôte. */
+  lastMovedAtMs?: number;
   def: WorldMonsterDef;
   hp: number;
   attackCooldownMs: number;
@@ -118,6 +214,12 @@ export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasdKeys!: { W: Phaser.Input.Keyboard.Key; A: Phaser.Input.Keyboard.Key; D: Phaser.Input.Keyboard.Key };
+  private currentPlayerSkin = 'adventurer';
+  /** false si le sprite embarqué (assets/sprite-library/) n'a pas pu charger — auquel cas le repli
+   * procédural (rectangle, cf. spawnPlayer) reste affiché en permanence, jamais animé par pose. */
+  private usesEmbeddedPlayerSprite = false;
+  private lastPlayerPose: PlayerPose = 'idle';
+  private walkFrameAccumMs = 0;
 
   private map!: Phaser.Tilemaps.Tilemap;
   private layer!: Phaser.Tilemaps.TilemapLayer;
@@ -167,6 +269,50 @@ export class GameScene extends Phaser.Scene {
   constructor(config: GameSceneConfig) {
     super('game');
     this.cfg = config;
+  }
+
+  /**
+   * Charge les vraies images du catalogue (icônes définies via le panneau IA/pack libre/upload,
+   * cf. AiImagePanelComponent) avant `create()` — Phaser exige que toute texture existe avant
+   * d'être posée sur un sprite/tilemap. Un fichier qui échoue à charger (404, réseau...) ne bloque
+   * pas les autres : `this.load` continue la file, et le code de rendu (buildTilemap/
+   * monsterTextureKey/spawnPlayer) vérifie `this.textures.exists(key)` avant de l'utiliser — sans
+   * quoi il retombe sur le rendu procédural (couleur de bloc, rond de couleur de monstre, rectangle
+   * doré du joueur), jamais d'erreur visible pour l'utilisateur.
+   */
+  preload(): void {
+    const poses: PlayerPose[] = ['idle', 'walk1', 'walk2', 'jump', 'fall'];
+    for (const skin of PLAYER_SKINS) {
+      for (const pose of poses) {
+        this.load.image(playerFrameKey(skin, pose), `assets/sprite-library/characters/${skin}_${pose}.png`);
+      }
+    }
+    for (const def of this.cfg.blockDefs.values()) {
+      if (def.iconUrl) this.load.image(blockIconKey(def.id), def.iconUrl);
+    }
+    // Un asset (ex: une jambe) peut être partagé par plusieurs monstres — dédupliqué ici via un Set
+    // local, pas via this.textures.exists() qui ne se peuple qu'après le chargement (donc toujours
+    // faux à ce stade de preload(), inutile pour éviter une double mise en file). `textureUrl` est
+    // déjà résolue (statique CC0 ou storage+token, cf. PlayComponent/ApiService.spriteAssetUrl) —
+    // GameScene ne construit plus jamais lui-même de chemin `assets/sprite-library/...`.
+    const queuedRigAssets = new Set<number>();
+    for (const def of this.cfg.monsters.values()) {
+      if (def.iconUrl) this.load.image(`monster-${def.id}`, def.iconUrl);
+      for (const part of def.rig?.parts ?? []) {
+        if (queuedRigAssets.has(part.assetId)) continue;
+        queuedRigAssets.add(part.assetId);
+        this.load.image(rigPartKey(part.assetId), part.textureUrl);
+      }
+      for (const skill of def.rig?.skills ?? []) {
+        for (const step of skill.steps) {
+          for (const pose of Object.values(step.poses)) {
+            if (pose.tempAssetId == null || !pose.tempTextureUrl || queuedRigAssets.has(pose.tempAssetId)) continue;
+            queuedRigAssets.add(pose.tempAssetId);
+            this.load.image(rigPartKey(pose.tempAssetId), pose.tempTextureUrl);
+          }
+        }
+      }
+    }
   }
 
   create(): void {
@@ -267,11 +413,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.handleMovement();
+    this.tickPlayerAnimation();
     this.handleLeftClick(delta);
     this.tickLiquids(delta);
     this.tickMonsterSpawns(delta);
     this.tickMonsterAI(delta);
+    this.tickRigCollisions(delta);
     this.tickMonsterBroadcast(delta);
+    this.tickRigPlayback();
   }
 
   /** Appelé depuis PlayComponent quand l'utilisateur sélectionne (ou désélectionne) un block de l'inventaire à poser. */
@@ -309,11 +458,17 @@ export class GameScene extends Phaser.Scene {
     const ctx = canvasTex.getContext();
     blockIds.forEach((id, i) => {
       const def = this.cfg.blockDefs.get(id)!;
-      ctx.fillStyle = def.color;
-      ctx.fillRect(i * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE);
-      ctx.strokeStyle = def.isLiquid ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(i * TILE_SIZE + 1, 1, TILE_SIZE - 2, TILE_SIZE - 2);
+      const iconKey = blockIconKey(id);
+      if (def.iconUrl && this.textures.exists(iconKey)) {
+        const img = this.textures.get(iconKey).getSourceImage() as CanvasImageSource;
+        ctx.drawImage(img, i * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE);
+      } else {
+        ctx.fillStyle = def.color;
+        ctx.fillRect(i * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE);
+        ctx.strokeStyle = def.isLiquid ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(i * TILE_SIZE + 1, 1, TILE_SIZE - 2, TILE_SIZE - 2);
+      }
       this.tileIndexByBlockId.set(id, i);
     });
     canvasTex.refresh();
@@ -342,24 +497,67 @@ export class GameScene extends Phaser.Scene {
       ? { x: this.cfg.initialCharacter.positionX, y: this.cfg.initialCharacter.positionY }
       : this.findSpawn();
 
-    if (!this.textures.exists('player')) {
+    this.currentPlayerSkin = this.cfg.playerSkin;
+    let playerTextureKey = playerFrameKey(this.currentPlayerSkin, 'idle');
+    this.usesEmbeddedPlayerSprite = this.textures.exists(playerTextureKey);
+    if (!this.usesEmbeddedPlayerSprite) {
+      // Repli si le sprite embarqué (assets/sprite-library/) n'a pas pu être chargé — cf. preload().
+      playerTextureKey = 'player';
       const g = this.add.graphics();
       g.fillStyle(0xffcc66, 1);
       g.fillRect(0, 0, 22, 38);
       g.fillStyle(0x222222, 1);
       g.fillRect(13, 8, 5, 5);
-      g.generateTexture('player', 22, 38);
+      g.generateTexture(playerTextureKey, 22, 38);
       g.destroy();
     }
 
-    this.player = this.physics.add.sprite(spawn.x, spawn.y, 'player');
+    this.player = this.physics.add.sprite(spawn.x, spawn.y, playerTextureKey);
     this.player.setOrigin(0.5, 1);
+    // Le sprite embarqué (80×110) n'a pas les proportions du rectangle procédural (22×38) qu'il
+    // remplace — redimensionné à l'affichage seulement, le corps physique ci-dessous reste la
+    // référence pour les collisions, pas la taille de texture.
+    if (this.usesEmbeddedPlayerSprite) this.player.setDisplaySize(28, 38);
     this.player.setCollideWorldBounds(true);
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setSize(20, 36);
     body.setGravityY(GRAVITY_Y);
 
     this.physics.add.collider(this.player, this.layer);
+  }
+
+  /** Change le skin joueur à chaud (choisi dans le HUD, cf. PlayComponent) — simple changement de
+   * texture parmi celles déjà préchargées (cf. preload()), jamais un rechargement réseau. */
+  setPlayerSkin(skin: string): void {
+    if (!PLAYER_SKINS.includes(skin) || !this.player) return;
+    this.currentPlayerSkin = skin;
+    const key = playerFrameKey(skin, this.lastPlayerPose);
+    if (this.textures.exists(key)) {
+      this.player.setTexture(key);
+      this.player.setDisplaySize(28, 38);
+    }
+  }
+
+  /** Bascule idle/marche(2 frames)/saut/chute selon l'état réel du corps physique — jamais pour un
+   * client dont ce ne serait pas le propre joueur (remotePlayers restent de simples rectangles,
+   * cf. addRemotePlayer, aucune animation de pose pour eux : hors périmètre de ce chantier). */
+  private tickPlayerAnimation(): void {
+    if (!this.usesEmbeddedPlayerSprite) return;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const onGround = body.blocked.down || body.touching.down;
+    let pose: PlayerPose;
+    if (!onGround && body.velocity.y < -20) pose = 'jump';
+    else if (!onGround && body.velocity.y > 20) pose = 'fall';
+    else if (Math.abs(body.velocity.x) > 10) {
+      this.walkFrameAccumMs += this.game.loop.delta;
+      const frame = Math.floor(this.walkFrameAccumMs / 180) % 2;
+      pose = frame === 0 ? 'walk1' : 'walk2';
+    } else pose = 'idle';
+
+    if (pose === this.lastPlayerPose) return;
+    this.lastPlayerPose = pose;
+    const key = playerFrameKey(this.currentPlayerSkin, pose);
+    if (this.textures.exists(key)) this.player.setTexture(key);
   }
 
   private findSpawn(): { x: number; y: number } {
@@ -853,9 +1051,25 @@ export class GameScene extends Phaser.Scene {
    * physique locale qui divergerait de celle de l'hôte).
    */
   private createMonsterEntity(networkId: string, def: WorldMonsterDef, x: number, y: number, hp: number, withPhysics: boolean): LiveMonster {
+    const rigged = def.rig?.parts?.length ? this.buildRiggedMonster(def, x, y, withPhysics) : null;
+    if (rigged) {
+      return {
+        networkId, sprite: rigged.container, rigParts: rigged.rigParts, skills: rigged.skills,
+        activePlayback: null, lastKnownX: x, def, hp, attackCooldownMs: 0,
+        wanderDir: Math.random() < 0.5 ? -1 : 1, aiTimerMs: 0, flyDirX: 1, flyDirY: 0,
+      };
+    }
+
     const textureKey = this.monsterTextureKey(def);
     const sprite = withPhysics ? this.physics.add.sprite(x, y, textureKey) : this.add.sprite(x, y, textureKey);
     sprite.setOrigin(0.5, 1);
+    // Icône réelle du catalogue (taille native arbitraire) vs rond procédural (déjà 28×28 natif) —
+    // recadrée à taille constante en conservant les proportions, jamais étirée.
+    if (def.iconUrl && this.textures.exists(textureKey)) {
+      const src = sprite.width, srcH = sprite.height;
+      const scale = Math.min(32 / src, 32 / srcH);
+      sprite.setDisplaySize(src * scale, srcH * scale);
+    }
 
     if (withPhysics) {
       const body = (sprite as Phaser.Physics.Arcade.Sprite).body as Phaser.Physics.Arcade.Body;
@@ -872,6 +1086,241 @@ export class GameScene extends Phaser.Scene {
       networkId, sprite, def, hp, attackCooldownMs: 0,
       wanderDir: Math.random() < 0.5 ? -1 : 1, aiTimerMs: 0, flyDirX: 1, flyDirY: 0,
     };
+  }
+
+  /**
+   * Construit un monstre monté par pièces (cf. MonsterBuilderComponent/Monster.rig) — un Container
+   * dont chaque pièce est un Sprite enfant positionné selon les coordonnées choisies par
+   * glisser-déposer dans l'éditeur (centrées sur le centre du canevas d'édition, 0,0). `groundY`
+   * ramène ces coordonnées au repère du jeu : le point le plus bas de l'ensemble des pièces devient
+   * y=0 (le sol, cf. convention `setOrigin(0.5,1)` du sprite classique qu'il remplace) — sans ça le
+   * montage flotterait ou s'enfoncerait selon la combinaison de pièces choisie. Origine (0.5,0)
+   * uniforme sur toutes les pièces (même une qui ne tourne jamais) : une rotation de compétence
+   * pivote alors toujours depuis le haut de la pièce (épaule/hanche), sans cas particulier par pièce.
+   *
+   * Une pièce dont la texture n'a pas pu charger (404, réseau — cf. preload()) est simplement omise
+   * plutôt que de casser tout le montage. Si AUCUNE pièce n'a chargé, retourne null : l'appelant
+   * retombe alors sur le sprite unique procédural, jamais un monstre invisible.
+   */
+  private buildRiggedMonster(def: WorldMonsterDef, x: number, y: number, withPhysics: boolean):
+    { container: Phaser.GameObjects.Container; rigParts: RigPartInstance[]; skills: RigSkillRuntime[] } | null {
+    const usable = (def.rig?.parts ?? [])
+      .filter(part => this.textures.exists(rigPartKey(part.assetId)))
+      .map(part => {
+        const img = this.textures.get(rigPartKey(part.assetId)).getSourceImage();
+        return { part, w: img.width, h: img.height };
+      });
+    if (usable.length === 0) return null;
+
+    const groundY = Math.max(...usable.map(({ part, h }) => part.y + h / 2));
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
+    const container = this.add.container(x, y);
+    const rigParts: RigPartInstance[] = [];
+    usable.forEach(({ part, w, h }, index) => {
+      const baseY = part.y - groundY - h / 2;
+      const restTextureKey = rigPartKey(part.assetId);
+      const child = this.add.sprite(part.x, baseY, restTextureKey);
+      child.setOrigin(0.5, 0);
+      child.setFlipX(part.flip);
+      container.add(child);
+      rigParts.push({
+        // Repli sur un id synthétique par position pour un montage sauvegardé avant l'introduction
+        // de ce champ (cf. MonsterBuilderComponent.ngOnInit) — reste unique au sein de CE montage,
+        // suffisant pour les clés de Map de tickRigPlayback même sans compétence pouvant s'y référer.
+        id: part.id ?? `legacy-${index}`, obj: child, baseX: part.x, baseY, restTextureKey, width: w, height: h,
+        isWeapon: !!part.isWeapon, collidesTerrain: !!part.collidesTerrain, terrainCooldownUntil: 0,
+      });
+      minX = Math.min(minX, part.x - w / 2); maxX = Math.max(maxX, part.x + w / 2);
+      minY = Math.min(minY, baseY); maxY = Math.max(maxY, baseY + h);
+    });
+
+    if (withPhysics) {
+      this.physics.add.existing(container);
+      const body = container.body as Phaser.Physics.Arcade.Body;
+      body.setSize(maxX - minX, maxY - minY);
+      body.setOffset(minX, minY);
+      if (def.movementPatterns.includes('flying')) {
+        body.setAllowGravity(false);
+      } else {
+        body.setGravityY(GRAVITY_Y);
+        this.physics.add.collider(container, this.layer);
+      }
+    }
+
+    return { container, rigParts, skills: this.resolveSkills(def) };
+  }
+
+  /** Résout les compétences du montage (cf. WorldRigSkill) en remplaçant chaque image temporaire
+   * par sa clé de texture préchargée — une image qui n'a pas pu charger dégrade silencieusement
+   * l'étape correspondante à une simple pose sans image (jamais une erreur visible). */
+  private resolveSkills(def: WorldMonsterDef): RigSkillRuntime[] {
+    return (def.rig?.skills ?? []).map(skill => ({
+      id: skill.id,
+      type: skill.type,
+      steps: skill.steps.map(step => ({
+        durationMs: Math.max(1, step.durationMs),
+        poses: new Map(Object.entries(step.poses).map(([partId, pose]) => [partId, {
+          dx: pose.dx, dy: pose.dy, rotationDeg: pose.rotationDeg,
+          tempTextureKey: pose.tempAssetId != null && this.textures.exists(rigPartKey(pose.tempAssetId))
+            ? rigPartKey(pose.tempAssetId) : undefined,
+        }])),
+      })),
+    }));
+  }
+
+  private static readonly REST_POSE: RigSkillPoseRuntime = { dx: 0, dy: 0, rotationDeg: 0 };
+
+  private applyPoseToPart(part: RigPartInstance, pose: RigSkillPoseRuntime): void {
+    part.obj.x = part.baseX + pose.dx;
+    part.obj.y = part.baseY + pose.dy;
+    part.obj.setAngle(pose.rotationDeg);
+    part.obj.setTexture(pose.tempTextureKey ?? part.restTextureKey);
+  }
+
+  private lerpPose(from: RigSkillPoseRuntime, to: RigSkillPoseRuntime, t: number): RigSkillPoseRuntime {
+    return {
+      dx: from.dx + (to.dx - from.dx) * t,
+      dy: from.dy + (to.dy - from.dy) * t,
+      rotationDeg: from.rotationDeg + (to.rotationDeg - from.rotationDeg) * t,
+      // L'image temporaire ne s'interpole pas — bascule nette à l'entrée de l'étape qui la porte
+      // (cf. tickRigPlayback), on affiche celle de la CIBLE dès que l'étape en cours en a une.
+      tempTextureKey: to.tempTextureKey,
+    };
+  }
+
+  /**
+   * Démarre la lecture d'une compétence sur un montage — capture la pose actuellement affichée de
+   * chaque pièce comme point de départ de l'interpolation (jamais un saut brutal depuis le repos si
+   * une autre compétence était déjà en cours). Une compétence en cours (loop ou non) est toujours
+   * remplacée sans condition : la plus récemment déclenchée gagne.
+   */
+  private startSkillPlayback(m: LiveMonster, skill: RigSkillRuntime, loop: boolean): void {
+    if (!m.rigParts || skill.steps.length === 0) return;
+    const fromPoses = new Map<string, RigSkillPoseRuntime>();
+    const prevStep = m.activePlayback?.skill.steps[m.activePlayback.stepIndex];
+    for (const p of m.rigParts) {
+      fromPoses.set(p.id, prevStep?.poses.get(p.id) ?? GameScene.REST_POSE);
+    }
+    m.activePlayback = { skill, loop, stepIndex: 0, stepStartMs: this.time.now, fromPoses };
+  }
+
+  private resetPartsToRest(m: LiveMonster): void {
+    for (const p of m.rigParts ?? []) this.applyPoseToPart(p, GameScene.REST_POSE);
+  }
+
+  /**
+   * Lit en continu la compétence active de chaque montage (cf. LiveMonster.activePlayback),
+   * interpole chaque pièce entre la pose de départ de l'étape courante et sa pose cible, et
+   * sélectionne la boucle idle/marche latérale d'après le déplacement RÉEL — mesuré par delta de
+   * position (jamais body.velocity) pour donner le même résultat côté hôte (vraie physique) et
+   * côté non-hôte (ne reçoit que des positions du réseau, cf. applyMonsterState). Le saut et
+   * l'attaque/impact-bloc restent déclenchés ailleurs (tickMonsterAI/tickRigCollisions) via
+   * startSkillPlayback — cette méthode ne fait qu'avancer la lecture, jamais la démarrer pour ces
+   * trois types.
+   */
+  private tickRigPlayback(): void {
+    const now = this.time.now;
+    for (const m of this.liveMonsters) {
+      if (!m.rigParts || !m.skills) continue;
+
+      const dx = Math.abs(m.sprite.x - (m.lastKnownX ?? m.sprite.x));
+      if (dx > RIG_MOVING_THRESHOLD_PX) m.lastMovedAtMs = now;
+      m.lastKnownX = m.sprite.x;
+      const moving = (now - (m.lastMovedAtMs ?? -Infinity)) < 300;
+
+      if (!m.activePlayback || m.activePlayback.loop) {
+        const desiredType = moving ? 'move-lateral' : 'idle';
+        if (!m.activePlayback || m.activePlayback.skill.type !== desiredType) {
+          const skill = m.skills.find(s => s.type === desiredType);
+          if (skill) this.startSkillPlayback(m, skill, true);
+          else { m.activePlayback = null; this.resetPartsToRest(m); }
+        }
+      }
+
+      const playback = m.activePlayback;
+      if (!playback) continue;
+      const step = playback.skill.steps[playback.stepIndex];
+      const t = Math.min(1, (now - playback.stepStartMs) / step.durationMs);
+
+      for (const p of m.rigParts) {
+        const from = playback.fromPoses.get(p.id) ?? GameScene.REST_POSE;
+        const to = step.poses.get(p.id) ?? GameScene.REST_POSE;
+        this.applyPoseToPart(p, this.lerpPose(from, to, t));
+      }
+
+      if (t >= 1) {
+        const isLastStep = playback.stepIndex >= playback.skill.steps.length - 1;
+        if (isLastStep && !playback.loop) {
+          m.activePlayback = null;
+          this.resetPartsToRest(m);
+        } else {
+          const nextFrom = new Map<string, RigSkillPoseRuntime>();
+          for (const p of m.rigParts) nextFrom.set(p.id, step.poses.get(p.id) ?? GameScene.REST_POSE);
+          playback.fromPoses = nextFrom;
+          playback.stepIndex = isLastStep ? 0 : playback.stepIndex + 1;
+          playback.stepStartMs = now;
+        }
+      }
+    }
+  }
+
+  /**
+   * Collisions PAR PIÈCE (pas seulement le monstre entier, déjà géré par le corps physique du
+   * Container) — hôte uniquement, comme tout ce qui simule réellement les monstres (cf. docstring
+   * de la classe). Deux familles de contact :
+   *   - `collidesTerrain` : la pièce contre un block solide du terrain → joue la compétence
+   *     'block-hit' si le monstre en a une (sinon rien : pas de réaction de secours).
+   *   - `isWeapon` : la pièce contre un joueur → inflige TOUJOURS les dégâts du monstre
+   *     (def.attackDamage/attackRate), et joue en plus la compétence 'attack' si elle existe — les
+   *     dégâts ne dépendent jamais de la présence d'une chorégraphie, seulement du contact réel.
+   * Simplification assumée (comme le reste du montage) : le recouvrement est testé sur la boîte
+   * englobante non tournée de la pièce (getBounds), pas sa forme exacte après rotation — suffisant
+   * à l'œil pour un battement de quelques degrés, jamais une hitbox pixel-perfect.
+   */
+  private tickRigCollisions(delta: number): void {
+    if (!this.isHost) return;
+    for (const m of this.liveMonsters) {
+      if (!m.rigParts) continue;
+      const hasWeapon = m.rigParts.some(p => p.isWeapon);
+      if (hasWeapon) m.attackCooldownMs = Math.max(0, m.attackCooldownMs - delta);
+
+      for (const p of m.rigParts) {
+        if (!p.collidesTerrain && !p.isWeapon) continue;
+        const bounds = p.obj.getBounds();
+
+        if (p.collidesTerrain && this.time.now >= p.terrainCooldownUntil) {
+          const corners: [number, number][] = [
+            [bounds.left, bounds.top], [bounds.right, bounds.top],
+            [bounds.left, bounds.bottom], [bounds.right, bounds.bottom],
+          ];
+          const hitsBlock = corners.some(([wx, wy]) => this.isSolidCollidableAt(Math.floor(wx / TILE_SIZE), Math.floor(wy / TILE_SIZE)));
+          if (hitsBlock) {
+            p.terrainCooldownUntil = this.time.now + RIG_TERRAIN_HIT_COOLDOWN_MS;
+            const skill = m.skills?.find(s => s.type === 'block-hit');
+            if (skill) this.startSkillPlayback(m, skill, false);
+            continue;
+          }
+        }
+
+        if (p.isWeapon && m.attackCooldownMs <= 0) {
+          const candidates: { id: 'self' | string; x: number; y: number }[] = [
+            { id: 'self', x: this.player.x, y: this.player.y },
+            ...[...this.remotePlayerPositions.entries()].map(([id, pos]) => ({ id, ...pos })),
+          ];
+          const hit = candidates.find(c => Phaser.Geom.Rectangle.Overlaps(
+            bounds, new Phaser.Geom.Rectangle(c.x - 11, c.y - 38, 22, 38),
+          ));
+          if (hit) {
+            m.attackCooldownMs = 1000 / Math.max(m.def.attackRate, 0.1);
+            if (hit.id === 'self') this.damagePlayer(m.def.attackDamage);
+            else this.cfg.onNetworkSend?.({ type: 'player-damage', targetId: hit.id, damage: m.def.attackDamage });
+            const skill = m.skills?.find(s => s.type === 'attack');
+            if (skill) this.startSkillPlayback(m, skill, false);
+          }
+        }
+      }
+    }
   }
 
   private spawnMonster(monsterId: number, x: number, y: number): void {
@@ -958,7 +1407,8 @@ export class GameScene extends Phaser.Scene {
           else { m.flyDirX = Math.random() < 0.5 ? -1 : 1; m.flyDirY = Math.random() < 0.5 ? -1 : 1; }
           m.aiTimerMs = 400 + Math.random() * 400;
         }
-        body.setVelocity(m.flyDirX * 60, m.flyDirY * 60);
+        const flySpeed = detected && (patterns.includes('chase') || patterns.includes('flee')) ? m.def.chaseSpeed : m.def.moveSpeed;
+        body.setVelocity(m.flyDirX * flySpeed, m.flyDirY * flySpeed);
       } else {
         if (m.aiTimerMs <= 0 || (detected && (patterns.includes('chase') || patterns.includes('flee')))) {
           let dir = m.wanderDir;
@@ -974,12 +1424,21 @@ export class GameScene extends Phaser.Scene {
         if (!groundAhead || wallAhead) m.wanderDir = (m.wanderDir * -1) as 1 | -1;
 
         const onGround = body.blocked.down || body.touching.down;
-        const speed = detected && patterns.includes('chase') ? 70 : 35;
+        const speed = detected && patterns.includes('chase') ? m.def.chaseSpeed : m.def.moveSpeed;
         body.setVelocityX(m.wanderDir * speed);
-        if (patterns.includes('jumping') && onGround && Math.random() < 0.02) body.setVelocityY(-320);
+        if (patterns.includes('jumping') && onGround && Math.random() < 0.02) {
+          body.setVelocityY(-m.def.jumpStrength);
+          const jumpSkill = m.skills?.find(s => s.type === 'jump');
+          if (jumpSkill) this.startSkillPlayback(m, jumpSkill, false);
+        }
       }
 
-      if (distTiles <= MONSTER_ATTACK_RANGE_TILES) {
+      // Un monstre avec au moins une pièce `isWeapon` dans son montage passe entièrement par le
+      // contact réel de cette pièce (cf. tickRigCollisions) — le calcul par distance ci-dessous
+      // resterait redondant (double dégâts) sinon. Un monstre sans montage, ou dont aucune pièce
+      // n'est une arme, garde le comportement d'origine (Lot 6b), inchangé.
+      const hasRigWeapon = m.rigParts?.some(p => p.isWeapon) ?? false;
+      if (!hasRigWeapon && distTiles <= m.def.attackRangeTiles) {
         m.attackCooldownMs -= delta;
         if (m.attackCooldownMs <= 0) {
           m.attackCooldownMs = 1000 / Math.max(m.def.attackRate, 0.1);

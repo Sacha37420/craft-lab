@@ -4,6 +4,7 @@ import { ApiService, CatalogueItem, CatalogueSuggestion, Tool } from '../../../c
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
+import { describeToolForPrompt } from '../../../shared/image-prompt';
 
 /** Outils (cahier des charges 1.5) — hache et pioche : puissance + vitesse de cassage. */
 @Component({
@@ -69,7 +70,7 @@ export class ToolsComponent implements OnInit {
   }
 
   imagePromptSeed(item: Tool): string {
-    return item.description ? `${item.name} : ${item.description}` : item.name;
+    return describeToolForPrompt(item);
   }
 
   onIconApplied(): void {

@@ -4,6 +4,7 @@ import { ApiService, CatalogueItem, CatalogueSuggestion, Weapon, WeaponProjectil
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
+import { describeWeaponForPrompt } from '../../../shared/image-prompt';
 
 /** Armes (cahier des charges 1.2) — sous-catégories mêlée/distance/magique/invocation. */
 @Component({
@@ -87,7 +88,7 @@ export class WeaponsComponent implements OnInit {
   }
 
   imagePromptSeed(item: Weapon): string {
-    return item.description ? `${item.name} : ${item.description}` : item.name;
+    return describeWeaponForPrompt(item);
   }
 
   onIconApplied(): void {

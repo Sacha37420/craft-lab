@@ -20,6 +20,8 @@ from .models import (
     Portal,
     Projectile,
     RecipeIngredient,
+    RigTemplate,
+    SpriteAsset,
     StatusEffect,
     Tool,
     UserRecord,
@@ -290,7 +292,8 @@ class MonsterSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'icon_path', 'icon_url', 'level', 'hp',
             'detection_range', 'detection_condition', 'attack_type', 'attack_damage',
-            'attack_rate', 'movement_patterns', 'created_at', 'updated_at',
+            'attack_rate', 'attack_range_tiles', 'movement_patterns', 'move_speed',
+            'chase_speed', 'jump_strength', 'rig', 'created_at', 'updated_at',
         ]
 
     def get_icon_url(self, obj) -> str | None:
@@ -329,6 +332,56 @@ class DepthTierSerializer(serializers.ModelSerializer):
     class Meta:
         model = DepthTier
         fields = ['id', 'game_map', 'depth_index', 'void_rate']
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 10 : bibliothèque d'assets centralisée
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class SpriteAssetSerializer(serializers.ModelSerializer):
+    """
+    `asset_url` est le seul point de résolution : cc0-bundled renvoie un chemin relatif STATIQUE
+    (assets/sprite-library/<file_path>, aucune requête storage), tout le reste passe par storage
+    (même forme que `_icon_url` — le frontend le préfixe avec storageApiUrl + token, cf.
+    ApiService.spriteAssetUrl). `file_path`/`source` sont en lecture seule : dérivés côté serveur au
+    moment de la création (cf. SpriteAssetViewSet.create), jamais choisis librement par le client —
+    `cc0-bundled` en particulier est réservé à la commande d'import, jamais exposé en écriture ici.
+    """
+
+    asset_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SpriteAsset
+        fields = [
+            'id', 'name', 'category', 'slot_hint', 'file_path', 'asset_url', 'source',
+            'tags', 'created_by_email', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['file_path', 'source', 'created_by_email', 'created_at', 'updated_at']
+
+    def get_asset_url(self, obj) -> str:
+        if obj.source == SpriteAsset.Source.CC0_BUNDLED:
+            return f'assets/sprite-library/{obj.file_path}'
+        return _icon_url(obj.file_path) or ''
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 11 : gabarits de monstre
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class RigTemplateSerializer(serializers.ModelSerializer):
+    """
+    Lecture seule côté API (pas de UI d'édition de gabarit dans ce lot — RigTemplate est semé par
+    migration, cf. `0016_rigtemplate_bipede.py`). `default_skills` est exposé pour transparence
+    mais n'est consommé que côté serveur (`MonsterViewSet.apply_template`), jamais interprété par
+    le frontend.
+    """
+
+    class Meta:
+        model = RigTemplate
+        fields = ['id', 'name', 'description', 'slots', 'default_skills', 'created_at']
+        read_only_fields = fields
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -383,6 +436,6 @@ class CharacterSerializer(serializers.ModelSerializer):
         model = Character
         fields = [
             'id', 'world', 'owner_email', 'hp', 'position_x', 'position_y',
-            'inventory', 'equipped_weapon_id', 'updated_at',
+            'inventory', 'equipped_weapon_id', 'appearance_skin', 'updated_at',
         ]
         read_only_fields = ['world', 'owner_email', 'updated_at']

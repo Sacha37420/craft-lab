@@ -423,11 +423,36 @@ class Monster(models.Model):
     )
     attack_damage = models.FloatField(default=0)
     attack_rate = models.FloatField(default=1)
+    # Portée de contact (en cases) pour la résolution par distance (GameScene.tickMonsterAI) — sans
+    # effet pour un monstre dont au moins une pièce du montage est `isWeapon` (résolution par contact
+    # réel à la place, cf. tickRigCollisions). Défaut identique à l'ancienne constante fixe
+    # MONSTER_ATTACK_RANGE_TILES, pour qu'un monstre existant sans valeur explicite garde le même
+    # comportement qu'avant l'ajout de ce champ.
+    attack_range_tiles = models.FloatField(default=1.2)
 
     # Patterns de déplacement (au sol, vol, saut, poursuite, fuite...) — liste
     # extensible de codes libres (ex: ["ground", "chase"]), pas de table dédiée
     # tant que Lot 4 n'a pas fixé le vocabulaire définitif.
     movement_patterns = models.JSONField(default=list, blank=True)
+    # Vitesses de déplacement (px/s) — défauts identiques aux anciennes constantes fixes du moteur
+    # (35 en maraude, 70 en poursuite/fuite active), désormais réglables par monstre.
+    move_speed = models.FloatField(default=35)
+    chase_speed = models.FloatField(default=70)
+    # Vitesse verticale d'impulsion de saut (px/s, positif — appliquée en négatif côté moteur) —
+    # défaut identique à l'ancienne constante fixe (320), pertinent seulement si movement_patterns
+    # contient "jumping".
+    jump_strength = models.FloatField(default=320)
+
+    # Montage optionnel à partir de pièces séparées de la bibliothèque d'assets (SpriteAsset, Lot 10
+    # — cf. MonsterBuilderComponent côté frontend) — chaque pièce garde son assetId ET sa position
+    # (Kenney ne fournit aucun point d'ancrage officiel : réglés à la main par glisser-déposer dans
+    # l'éditeur, pas une donnée du pack). Vide pour un monstre utilisant une icône plate classique
+    # (IA/upload/pack libre) — le moteur de jeu retombe alors sur `icon_path` comme avant.
+    # Structure : {"parts": [{"id", "assetId", "x", "y", "flip", "isWeapon", "collidesTerrain"}, ...],
+    # "skills": [{"id", "name", "type", "steps": [{"durationMs", "poses": {partId: {"dx", "dy",
+    # "rotationDeg", "tempAssetId"}}}]}]} — cf. api.service.ts (MonsterRig/RigSkill) pour le contrat
+    # complet côté frontend, seul endroit qui valide vraiment cette structure (JSONField libre ici).
+    rig = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -474,6 +499,120 @@ class MonsterDrop(models.Model):
 
     def __str__(self) -> str:
         return f'{self.monster} → {self.quantity}x {self.dropped_item} ({self.chance:.0%})'
+
+
+# ── Lot 10 : bibliothèque d'assets centralisée ──────────────────────────────
+
+
+class SpriteAsset(models.Model):
+    """
+    Image 2D réutilisable, indépendante de toute entité du catalogue — unifie deux origines qui ne
+    se recoupaient pas jusqu'ici : le pack CC0 embarqué (Kenney/OpenGameArt,
+    assets/sprite-library/, importé une fois par la commande `import_sprite_library`) et tout
+    contenu produit par un utilisateur (upload direct ou génération IA), stocké dans le partage
+    storage 'craft-lab' comme une icône classique (cf. storage_client.upload_bytes).
+
+    Décision Lot 10 (tranchée avec l'utilisateur, cf. to_do_craft_lab.md) : le contenu CC0 n'est
+    PAS copié en octets dans storage — pour ces entrées, `file_path` reste le chemin relatif
+    STATIQUE déjà existant (assets/sprite-library/<file_path>, servi par Angular, aucune requête
+    storage/token) afin de préserver perf/cache navigateur pour la grande majorité des pièces
+    utilisées en jeu (montage de monstre). Seul le contenu utilisateur passe réellement par
+    storage. `SpriteAssetSerializer.asset_url` est le seul point qui bifurque selon `source` —
+    tout consommateur (frontend, moteur de jeu) passe par lui, jamais par une reconstruction locale
+    du chemin.
+
+    `Monster.rig.parts[].assetId` / `RigSkillStep.poses[].tempAssetId` référencent cette table par
+    id (JSON libre côté Monster, pas de FK — même style de couplage lâche que le reste du rig).
+    """
+
+    class Category(models.TextChoices):
+        BLOCK = 'block', 'Block'
+        CHARACTER = 'character', 'Personnage'
+        MONSTER_CREATURE = 'monster-creature', 'Monstre (assemblé)'
+        MONSTER_PART = 'monster-part', 'Pièce de monstre'
+        WEAPON = 'weapon', 'Arme'
+        TOOL = 'tool', 'Outil'
+        EFFECT = 'effect', 'Effet'
+        OTHER = 'other', 'Autre'
+
+    class Source(models.TextChoices):
+        CC0_BUNDLED = 'cc0-bundled', 'Pack CC0 embarqué'
+        AI_GENERATED = 'ai-generated', 'Généré par IA'
+        UPLOAD = 'upload', 'Upload manuel'
+
+    name = models.CharField(max_length=200)
+    category = models.CharField(max_length=20, choices=Category.choices)
+    # Slot d'un gabarit de monstre (body/arm/leg/eye/eyebrow/mouth/nose/detail/snot, cf.
+    # monster-parts-manifest.json historique) — pertinent seulement si category=MONSTER_PART,
+    # réutilisé tel quel par RigTemplate.slots[].slot_key au Lot 11.
+    slot_hint = models.CharField(max_length=50, blank=True)
+    # cc0-bundled : chemin relatif dans assets/sprite-library/ (ex: "blocks/dirt.png").
+    # ai-generated/upload : chemin relatif dans le partage storage 'craft-lab' (ex:
+    # "sprite-assets/monster-part/<uuid>.png"), même convention que Item.icon_path.
+    file_path = models.CharField(max_length=1024)
+    source = models.CharField(max_length=20, choices=Source.choices)
+    tags = models.JSONField(default=list, blank=True)
+    created_by_email = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'sprite_assets'
+        ordering = ['category', 'name']
+
+    def __str__(self) -> str:
+        return f'{self.name} ({self.category})'
+
+
+# ── Lot 11 : gabarits de monstre ─────────────────────────────────────────────
+
+
+class RigTemplate(models.Model):
+    """
+    Gabarit de montage de monstre (Lot 11) — un point de départ réutilisable (ossature + choré-
+    graphies par défaut), matérialisé en un vrai `Monster.rig` par
+    `POST /api/monsters/<id>/apply-template/` (cf. MonsterViewSet.apply_template). Jamais consommé
+    directement en jeu — contrairement à SpriteAsset/Monster, un RigTemplate n'a pas de contrepartie
+    dans le moteur Phaser, uniquement au moment de la création du montage.
+
+    `slots` — liste de `{"slot_key": str, "label": str, "asset_slot_hint": str, "default_x": float,
+    "default_y": float, "required": bool, "repeatable": bool}`. `asset_slot_hint` est le
+    `SpriteAsset.slot_hint` (body/arm/leg/eye/...) dont ce slot propose les pièces au choix — DIFFÉRENT
+    de `slot_key` : un gabarit peut avoir DEUX slots structurels ("arm-left"/"arm-right") puisant tous
+    deux dans la MÊME catégorie de pièces CC0 ("arm", qui n'a pas de variante gauche/droite — le
+    flip côté MonsterRigPart s'en charge). `slot_key` reste l'identifiant unique utilisé pour
+    l'indexation des poses et la résolution en partId, jamais `asset_slot_hint`.
+      - un slot NON repeatable (Bipède/Volant/Tourelle) est instancié UNE fois, à sa position fixe ;
+      - un slot repeatable (seul le gabarit "Ver / serpent" l'utilise) peut être instancié N fois
+        (N choisi à l'application, cf. `segment_count` du payload d'apply-template) — `default_x`/
+        `default_y` représentent alors l'ESPACEMENT entre deux instances consécutives (segment i à
+        `i × default_x`, `i × default_y`), pas une position absolue.
+
+    `default_skills` a la même forme qu'un `Monster.rig["skills"]` (liste de RigSkill), à UNE
+    différence : chaque pose de `RigSkillStep.poses` est indexée par `slot_key` (le partId réel
+    n'existe pas encore à ce stade) — résolue à l'application. Pour un slot NON repeatable, la
+    valeur est une pose unique `{dx, dy, rotationDeg, tempAssetId?}` comme dans un Monster.rig
+    normal. Pour un slot repeatable, la valeur est une LISTE de poses de longueur `wavelength`
+    (une "photo" de la vague à cette étape, un point par position relative dans le motif) — le
+    segment i lit toujours l'entrée `i % wavelength` ; comme cette liste change de forme d'une étape
+    à l'autre (le motif se décale), chaque segment rejoue la même onde avec un déphasage égal à sa
+    position dans la chaîne, sans qu'aucun concept de "phase" n'existe côté moteur de jeu — tout est
+    résolu (aplati en poses concrètes par partId) au moment de `apply_template`, jamais rejoué tel
+    quel par GameScene.
+    """
+
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    slots = models.JSONField(default=list)
+    default_skills = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'rig_templates'
+        ordering = ['name']
+
+    def __str__(self) -> str:
+        return self.name
 
 
 # ── 1.9 Cartes — génération par profondeur ──────────────────────────────────
@@ -665,6 +804,12 @@ class Character(models.Model):
     # cohérent avec block_diff ci-dessus.
     inventory = models.JSONField(default=dict, blank=True)
     equipped_weapon_id = models.IntegerField(null=True, blank=True)
+    # Préfixe de fichier dans assets/sprite-library/characters/ (ex: "adventurer", "zombie") — un
+    # skin complet du pack Kenney "Platformer Characters" (5 disponibles), jamais un chemin arbitraire
+    # : GameScene dérive lui-même <prefix>_idle/_walk1/_walk2/_jump/_fall.png à partir de cette seule
+    # valeur (cf. PLAYER_SKINS côté frontend). Par (monde, utilisateur) comme le reste de Character,
+    # pas un profil global — aucune entité "compte utilisateur" n'existe ailleurs dans ce schéma.
+    appearance_skin = models.CharField(max_length=32, blank=True, default='adventurer')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

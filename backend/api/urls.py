@@ -15,6 +15,8 @@ from .views import (
     MonsterViewSet,
     PortalViewSet,
     ProjectileViewSet,
+    RigTemplateViewSet,
+    SpriteAssetViewSet,
     StatusEffectViewSet,
     ToolViewSet,
     UserListView,
@@ -36,6 +38,8 @@ router.register('game-maps', GameMapViewSet, basename='game-map')
 router.register('depth-tiers', DepthTierViewSet, basename='depth-tier')
 router.register('portals', PortalViewSet, basename='portal')
 router.register('worlds', WorldViewSet, basename='world')
+router.register('sprite-assets', SpriteAssetViewSet, basename='sprite-asset')
+router.register('rig-templates', RigTemplateViewSet, basename='rig-template')
 
 urlpatterns = [
     path('me/',          MeView.as_view()),

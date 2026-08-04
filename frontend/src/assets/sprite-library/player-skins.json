@@ -1,0 +1,29 @@
+{
+  "skins": [
+    {
+      "key": "adventurer",
+      "label": "Aventurier",
+      "thumb": "characters/adventurer_idle.png"
+    },
+    {
+      "key": "female",
+      "label": "Aventurière",
+      "thumb": "characters/female_idle.png"
+    },
+    {
+      "key": "player",
+      "label": "Héros",
+      "thumb": "characters/player_idle.png"
+    },
+    {
+      "key": "soldier",
+      "label": "Soldat",
+      "thumb": "characters/soldier_idle.png"
+    },
+    {
+      "key": "zombie",
+      "label": "Zombie",
+      "thumb": "characters/zombie_idle.png"
+    }
+  ]
+}

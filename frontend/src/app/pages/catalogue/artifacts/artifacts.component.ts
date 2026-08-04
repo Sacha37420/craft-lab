@@ -5,6 +5,7 @@ import { Artifact, ArtifactEffect, ApiService, CatalogueItem, CatalogueSuggestio
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
+import { describeArtifactForPrompt } from '../../../shared/image-prompt';
 
 const EFFECT_TYPES: { value: string; label: string }[] = [
   { value: 'hp_boost', label: 'PV' },
@@ -92,7 +93,7 @@ export class ArtifactsComponent implements OnInit {
   }
 
   imagePromptSeed(item: Artifact): string {
-    return item.description ? `${item.name} : ${item.description}` : item.name;
+    return describeArtifactForPrompt(item);
   }
 
   onIconApplied(): void {

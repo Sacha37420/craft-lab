@@ -5,6 +5,7 @@ import { ApiService, Block, BlockDrop, CatalogueItem, CatalogueSuggestion, Statu
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
+import { describeBlockForPrompt } from '../../../shared/image-prompt';
 
 /**
  * Blocks de base et liquides (cahier des charges 1.6/1.7) — un seul modèle :
@@ -96,7 +97,7 @@ export class BlocksComponent implements OnInit {
   }
 
   imagePromptSeed(item: Block): string {
-    return item.description ? `${item.name} : ${item.description}` : item.name;
+    return describeBlockForPrompt(item);
   }
 
   onIconApplied(): void {

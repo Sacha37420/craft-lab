@@ -56,4 +56,47 @@
     <input type="file" accept="image/*" [disabled]="uploading()" (change)="uploadFile($event)" />
     @if (uploading()) { <p class="hint">Envoi…</p> }
   </div>
+
+  <div class="ai-image-library">
+    <button type="button" class="btn btn-secondary btn-sm" (click)="toggleLibrary()">
+      {{ showLibrary() ? '▾' : '▸' }} Choisir dans un pack libre (CC0)
+    </button>
+
+    @if (showLibrary()) {
+      @if (libraryLoading()) {
+        <p class="hint">Chargement de la bibliothèque…</p>
+      } @else if (libraryError()) {
+        <div class="alert alert-danger">{{ libraryError() }}</div>
+      } @else {
+        <p class="hint">
+          Bibliothèque partagée : sprites libres de droits (CC0 — Kenney.nl, OpenGameArt.org) et
+          contenu ajouté par la communauté du lab. Cliquez une image pour l'utiliser directement
+          comme icône.
+        </p>
+        @for (cat of libraryCategories(); track cat.key) {
+          <div class="ai-pack-category">
+            <button type="button" class="ai-pack-category-toggle" (click)="toggleCategory(cat.key)">
+              {{ openCategory() === cat.key ? '▾' : '▸' }} {{ cat.label }} ({{ cat.items.length }})
+            </button>
+            @if (openCategory() === cat.key) {
+              <div class="ai-pack-grid">
+                @for (item of cat.items; track item.id) {
+                  <button
+                    type="button"
+                    class="ai-pack-thumb-btn"
+                    [disabled]="pickingId() === item.id"
+                    [title]="item.name"
+                    (click)="pickFromLibrary(item)"
+                  >
+                    <img [src]="libraryAssetUrl(item)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+                    @if (pickingId() === item.id) { <span class="ai-pack-thumb-loading">…</span> }
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        }
+      }
+    }
+  </div>
 </div>

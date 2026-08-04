@@ -4,6 +4,7 @@ import { ApiService, CatalogueItem, CatalogueSuggestion, Projectile } from '../.
 import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-editor.component';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
+import { describeProjectileForPrompt } from '../../../shared/image-prompt';
 
 /**
  * Projectiles (cahier des charges 1.3) — utilisés par les armes à distance ;
@@ -72,7 +73,7 @@ export class ProjectilesComponent implements OnInit {
   }
 
   imagePromptSeed(item: Projectile): string {
-    return item.description ? `${item.name} : ${item.description}` : item.name;
+    return describeProjectileForPrompt(item);
   }
 
   onIconApplied(): void {

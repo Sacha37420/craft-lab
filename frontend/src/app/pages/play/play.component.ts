@@ -5,11 +5,11 @@ import { forkJoin, Observable, of } from 'rxjs';
 import Phaser from 'phaser';
 import {
   Artifact, ApiService, Block, CatalogueCategoryPath, DepthTier, DepthTierBlockRate,
-  DepthTierMonsterSpawn, GameMap, Monster, Projectile, RecipeIngredient, Tool, Weapon,
+  DepthTierMonsterSpawn, GameMap, Monster, Projectile, RecipeIngredient, SpriteAsset, Tool, Weapon,
   World, WorldGenerationRules,
 } from '../../core/api.service';
 import { colorForBlockId, TierRules } from '../../shared/world/terrain-generation';
-import { GameScene, InitialCharacterState } from './game-scene';
+import { GameScene, InitialCharacterState, PLAYER_SKINS } from './game-scene';
 import {
   InventoryEntry, WorldBlockDef, WorldItemRef, WorldMonsterDef, WorldMonsterSpawnRate,
   WorldRecipe, WorldToolDef, WorldWeaponDef,
@@ -18,6 +18,9 @@ import {
 interface CatalogBundle {
   blocks: Block[]; tools: Tool[]; items: { id: number; name: string; category: string; icon_url?: string | null }[];
   monsters: Monster[]; weapons: Weapon[]; projectiles: Projectile[]; artifacts: Artifact[];
+  /** Bibliothèque complète (Lot 10) — sert à résoudre les assetId du rig de chaque monstre en URL
+   * de texture AVANT le lancement de Phaser (cf. onRecipesLoaded), jamais recalculé dans GameScene. */
+  spriteAssets: SpriteAsset[];
 }
 
 /**
@@ -39,6 +42,7 @@ interface LaunchContext {
   seed: number;
   initialBlockDiff?: Record<string, number | null>;
   initialCharacter?: InitialCharacterState;
+  playerSkin?: string;
 }
 
 /** Un autre joueur connecté au même monde (Lot 8) — pour le petit roster affiché en jeu. */
@@ -84,6 +88,8 @@ export class PlayComponent implements OnInit, OnDestroy {
   playing = signal(false);
   worldId = signal<number | null>(null);
   worldName = signal('');
+  playerSkin = signal('adventurer');
+  readonly playerSkins = PLAYER_SKINS;
   inventory = signal<InventoryEntry[]>([]);
   selectedBlockId = signal<number | null>(null);
   equippedWeaponId = signal<number | null>(null);
@@ -95,6 +101,7 @@ export class PlayComponent implements OnInit, OnDestroy {
   saving = signal(false);
 
   showCraft = signal(false);
+  showSkins = signal(false);
   recipes: WorldRecipe[] = [];
 
   remotePlayers = signal<RemotePlayer[]>([]);
@@ -231,6 +238,7 @@ export class PlayComponent implements OnInit, OnDestroy {
         this.loadCatalogAndLaunch(tierRules, monsterSpawnsByTier, {
           worldId: detail.id!, worldName: detail.name, sourceMapName: detail.source_map_name ?? '',
           seed: detail.seed, initialBlockDiff: detail.block_diff, initialCharacter,
+          playerSkin: character.appearance_skin || 'adventurer',
         });
       },
       error: () => { this.error.set('Erreur lors du chargement de la partie sauvegardée.'); this.loadingWorld.set(false); },
@@ -253,6 +261,7 @@ export class PlayComponent implements OnInit, OnDestroy {
       weapons: this.api.getWeapons(),
       projectiles: this.api.getProjectiles(),
       artifacts: this.api.getArtifacts(),
+      spriteAssets: this.api.getSpriteAssets(),
     }).subscribe({
       next: catalog => this.onCatalogLoaded(tierRules, monsterSpawnsByTier, blockIds, monsterIds, catalog, ctx),
       error: () => { this.error.set('Erreur lors du chargement du catalogue.'); this.loadingWorld.set(false); },
@@ -320,6 +329,7 @@ export class PlayComponent implements OnInit, OnDestroy {
         drops: blockDropLists[i]
           .filter(d => d.dropped_item != null)
           .map(d => ({ itemId: d.dropped_item as number, quantity: d.quantity, chance: d.chance })),
+        iconUrl: b.icon_url ? this.api.iconUrl(b.icon_url) : null,
       });
     });
 
@@ -328,16 +338,47 @@ export class PlayComponent implements OnInit, OnDestroy {
     const itemsById = new Map<number, WorldItemRef>();
     catalog.items.forEach(it => itemsById.set(it.id, { id: it.id, name: it.name, category: it.category, iconUrl: it.icon_url ?? null }));
 
+    // Résolution des assetId du rig en URL de texture (Lot 10) — UNE fois ici, avant Phaser :
+    // GameScene ne parle jamais à l'API, cf. WorldMonsterRigPart.textureUrl. Un assetId sans
+    // correspondance (asset supprimé depuis) résout en chaîne vide — GameScene omet alors
+    // simplement cette pièce (this.textures.exists() jamais vrai pour une image jamais mise en
+    // file), même dégradation silencieuse qu'un 404 réseau aujourd'hui.
+    const spriteAssetsById = new Map(catalog.spriteAssets.map(a => [a.id, a]));
+    const resolveTextureUrl = (assetId: number): string => {
+      const asset = spriteAssetsById.get(assetId);
+      return asset ? this.api.spriteAssetUrl(asset) : '';
+    };
+
     const monsterDefs = new Map<number, WorldMonsterDef>();
     monsterIds.forEach((id, i) => {
       const m = catalog.monsters.find(mo => mo.id === id);
       if (!m) return;
       monsterDefs.set(id, {
         id, name: m.name, hp: m.hp, detectionRange: m.detection_range, attackType: m.attack_type,
-        attackDamage: m.attack_damage, attackRate: m.attack_rate, movementPatterns: m.movement_patterns,
+        attackDamage: m.attack_damage, attackRate: m.attack_rate, attackRangeTiles: m.attack_range_tiles,
+        movementPatterns: m.movement_patterns, moveSpeed: m.move_speed, chaseSpeed: m.chase_speed,
+        jumpStrength: m.jump_strength,
         drops: monsterDropLists[i]
           .filter(d => d.dropped_item != null)
           .map(d => ({ itemId: d.dropped_item as number, quantity: d.quantity, chance: d.chance })),
+        iconUrl: m.icon_url ? this.api.iconUrl(m.icon_url) : null,
+        rig: m.rig?.parts?.length ? {
+          parts: m.rig.parts.map(p => ({
+            id: p.id, assetId: p.assetId, textureUrl: resolveTextureUrl(p.assetId),
+            x: p.x, y: p.y, flip: p.flip, isWeapon: p.isWeapon, collidesTerrain: p.collidesTerrain,
+          })),
+          skills: (m.rig.skills ?? []).map(s => ({
+            id: s.id, name: s.name, type: s.type,
+            steps: s.steps.map(step => ({
+              durationMs: step.durationMs,
+              poses: Object.fromEntries(Object.entries(step.poses).map(([partId, pose]) => [partId, {
+                dx: pose.dx, dy: pose.dy, rotationDeg: pose.rotationDeg,
+                tempAssetId: pose.tempAssetId,
+                tempTextureUrl: pose.tempAssetId != null ? resolveTextureUrl(pose.tempAssetId) : undefined,
+              }])),
+            })),
+          })),
+        } : undefined,
       });
     });
 
@@ -391,8 +432,10 @@ export class PlayComponent implements OnInit, OnDestroy {
     this.equippedWeaponId.set(ctx.initialCharacter?.equippedWeaponId ?? null);
     this.miningProgress.set(null);
     this.showCraft.set(false);
+    this.showSkins.set(false);
     this.worldId.set(ctx.worldId);
     this.worldName.set(ctx.worldName);
+    this.playerSkin.set(ctx.playerSkin ?? 'adventurer');
     // Le conteneur #phaser-container n'existe dans le DOM qu'une fois `playing`
     // passé à true (bloc @if du template) — Phaser résout son `parent` par id
     // dès la construction de Phaser.Game, donc il faut laisser Angular rendre
@@ -415,6 +458,7 @@ export class PlayComponent implements OnInit, OnDestroy {
           recipes: this.recipes,
           initialBlockDiff: ctx.initialBlockDiff,
           initialCharacter: ctx.initialCharacter,
+          playerSkin: ctx.playerSkin ?? 'adventurer',
           onInventoryChange: entries => this.zone.run(() => this.inventory.set(entries)),
           onMiningProgress: (progress, blockName) => this.zone.run(() => {
             this.miningProgress.set(progress);
@@ -587,8 +631,26 @@ export class PlayComponent implements OnInit, OnDestroy {
     this.scene?.craftItem(itemId);
   }
 
+  /** Changement de skin à chaud (HUD) — met à jour l'affichage immédiatement (scene.setPlayerSkin,
+   * texture déjà préchargée) puis persiste séparément, sans attendre une sauvegarde complète. */
+  changeSkin(skin: string): void {
+    if (skin === this.playerSkin()) return;
+    this.playerSkin.set(skin);
+    this.scene?.setPlayerSkin(skin);
+    const id = this.worldId();
+    if (id != null) this.api.updateCharacterAppearance(id, skin).subscribe();
+  }
+
   toggleCraft(): void {
     this.showCraft.update(v => !v);
+  }
+
+  toggleSkins(): void {
+    this.showSkins.update(v => !v);
+  }
+
+  skinAssetUrl(skin: string): string {
+    return `assets/sprite-library/characters/${skin}_idle.png`;
   }
 
   // ── Sauvegarde (Lot 7) ────────────────────────────────────────────────────

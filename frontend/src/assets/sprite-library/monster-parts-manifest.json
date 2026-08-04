@@ -1,0 +1,779 @@
+{
+  "slots": [
+    {
+      "key": "body",
+      "label": "Corps",
+      "required": true,
+      "items": [
+        {
+          "file": "monsters/parts/body_blueA.png",
+          "label": "Bluea"
+        },
+        {
+          "file": "monsters/parts/body_blueB.png",
+          "label": "Blueb"
+        },
+        {
+          "file": "monsters/parts/body_blueC.png",
+          "label": "Bluec"
+        },
+        {
+          "file": "monsters/parts/body_blueD.png",
+          "label": "Blued"
+        },
+        {
+          "file": "monsters/parts/body_blueE.png",
+          "label": "Bluee"
+        },
+        {
+          "file": "monsters/parts/body_blueF.png",
+          "label": "Bluef"
+        },
+        {
+          "file": "monsters/parts/body_darkA.png",
+          "label": "Darka"
+        },
+        {
+          "file": "monsters/parts/body_darkB.png",
+          "label": "Darkb"
+        },
+        {
+          "file": "monsters/parts/body_darkC.png",
+          "label": "Darkc"
+        },
+        {
+          "file": "monsters/parts/body_darkD.png",
+          "label": "Darkd"
+        },
+        {
+          "file": "monsters/parts/body_darkE.png",
+          "label": "Darke"
+        },
+        {
+          "file": "monsters/parts/body_darkF.png",
+          "label": "Darkf"
+        },
+        {
+          "file": "monsters/parts/body_greenA.png",
+          "label": "Greena"
+        },
+        {
+          "file": "monsters/parts/body_greenB.png",
+          "label": "Greenb"
+        },
+        {
+          "file": "monsters/parts/body_greenC.png",
+          "label": "Greenc"
+        },
+        {
+          "file": "monsters/parts/body_greenD.png",
+          "label": "Greend"
+        },
+        {
+          "file": "monsters/parts/body_greenE.png",
+          "label": "Greene"
+        },
+        {
+          "file": "monsters/parts/body_greenF.png",
+          "label": "Greenf"
+        },
+        {
+          "file": "monsters/parts/body_redA.png",
+          "label": "Reda"
+        },
+        {
+          "file": "monsters/parts/body_redB.png",
+          "label": "Redb"
+        },
+        {
+          "file": "monsters/parts/body_redC.png",
+          "label": "Redc"
+        },
+        {
+          "file": "monsters/parts/body_redD.png",
+          "label": "Redd"
+        },
+        {
+          "file": "monsters/parts/body_redE.png",
+          "label": "Rede"
+        },
+        {
+          "file": "monsters/parts/body_redF.png",
+          "label": "Redf"
+        },
+        {
+          "file": "monsters/parts/body_whiteA.png",
+          "label": "Whitea"
+        },
+        {
+          "file": "monsters/parts/body_whiteB.png",
+          "label": "Whiteb"
+        },
+        {
+          "file": "monsters/parts/body_whiteC.png",
+          "label": "Whitec"
+        },
+        {
+          "file": "monsters/parts/body_whiteD.png",
+          "label": "Whited"
+        },
+        {
+          "file": "monsters/parts/body_whiteE.png",
+          "label": "Whitee"
+        },
+        {
+          "file": "monsters/parts/body_whiteF.png",
+          "label": "Whitef"
+        },
+        {
+          "file": "monsters/parts/body_yellowA.png",
+          "label": "Yellowa"
+        },
+        {
+          "file": "monsters/parts/body_yellowB.png",
+          "label": "Yellowb"
+        },
+        {
+          "file": "monsters/parts/body_yellowC.png",
+          "label": "Yellowc"
+        },
+        {
+          "file": "monsters/parts/body_yellowD.png",
+          "label": "Yellowd"
+        },
+        {
+          "file": "monsters/parts/body_yellowE.png",
+          "label": "Yellowe"
+        },
+        {
+          "file": "monsters/parts/body_yellowF.png",
+          "label": "Yellowf"
+        }
+      ]
+    },
+    {
+      "key": "arm",
+      "label": "Bras",
+      "required": true,
+      "items": [
+        {
+          "file": "monsters/parts/arm_blueA.png",
+          "label": "Bluea"
+        },
+        {
+          "file": "monsters/parts/arm_blueB.png",
+          "label": "Blueb"
+        },
+        {
+          "file": "monsters/parts/arm_blueC.png",
+          "label": "Bluec"
+        },
+        {
+          "file": "monsters/parts/arm_blueD.png",
+          "label": "Blued"
+        },
+        {
+          "file": "monsters/parts/arm_blueE.png",
+          "label": "Bluee"
+        },
+        {
+          "file": "monsters/parts/arm_darkA.png",
+          "label": "Darka"
+        },
+        {
+          "file": "monsters/parts/arm_darkB.png",
+          "label": "Darkb"
+        },
+        {
+          "file": "monsters/parts/arm_darkC.png",
+          "label": "Darkc"
+        },
+        {
+          "file": "monsters/parts/arm_darkD.png",
+          "label": "Darkd"
+        },
+        {
+          "file": "monsters/parts/arm_darkE.png",
+          "label": "Darke"
+        },
+        {
+          "file": "monsters/parts/arm_greenA.png",
+          "label": "Greena"
+        },
+        {
+          "file": "monsters/parts/arm_greenB.png",
+          "label": "Greenb"
+        },
+        {
+          "file": "monsters/parts/arm_greenC.png",
+          "label": "Greenc"
+        },
+        {
+          "file": "monsters/parts/arm_greenD.png",
+          "label": "Greend"
+        },
+        {
+          "file": "monsters/parts/arm_greenE.png",
+          "label": "Greene"
+        },
+        {
+          "file": "monsters/parts/arm_redA.png",
+          "label": "Reda"
+        },
+        {
+          "file": "monsters/parts/arm_redB.png",
+          "label": "Redb"
+        },
+        {
+          "file": "monsters/parts/arm_redC.png",
+          "label": "Redc"
+        },
+        {
+          "file": "monsters/parts/arm_redD.png",
+          "label": "Redd"
+        },
+        {
+          "file": "monsters/parts/arm_redE.png",
+          "label": "Rede"
+        },
+        {
+          "file": "monsters/parts/arm_whiteA.png",
+          "label": "Whitea"
+        },
+        {
+          "file": "monsters/parts/arm_whiteB.png",
+          "label": "Whiteb"
+        },
+        {
+          "file": "monsters/parts/arm_whiteC.png",
+          "label": "Whitec"
+        },
+        {
+          "file": "monsters/parts/arm_whiteD.png",
+          "label": "Whited"
+        },
+        {
+          "file": "monsters/parts/arm_whiteE.png",
+          "label": "Whitee"
+        },
+        {
+          "file": "monsters/parts/arm_yellowA.png",
+          "label": "Yellowa"
+        },
+        {
+          "file": "monsters/parts/arm_yellowB.png",
+          "label": "Yellowb"
+        },
+        {
+          "file": "monsters/parts/arm_yellowC.png",
+          "label": "Yellowc"
+        },
+        {
+          "file": "monsters/parts/arm_yellowD.png",
+          "label": "Yellowd"
+        },
+        {
+          "file": "monsters/parts/arm_yellowE.png",
+          "label": "Yellowe"
+        }
+      ]
+    },
+    {
+      "key": "leg",
+      "label": "Jambes",
+      "required": true,
+      "items": [
+        {
+          "file": "monsters/parts/leg_blueA.png",
+          "label": "Bluea"
+        },
+        {
+          "file": "monsters/parts/leg_blueB.png",
+          "label": "Blueb"
+        },
+        {
+          "file": "monsters/parts/leg_blueC.png",
+          "label": "Bluec"
+        },
+        {
+          "file": "monsters/parts/leg_blueD.png",
+          "label": "Blued"
+        },
+        {
+          "file": "monsters/parts/leg_blueE.png",
+          "label": "Bluee"
+        },
+        {
+          "file": "monsters/parts/leg_darkA.png",
+          "label": "Darka"
+        },
+        {
+          "file": "monsters/parts/leg_darkB.png",
+          "label": "Darkb"
+        },
+        {
+          "file": "monsters/parts/leg_darkC.png",
+          "label": "Darkc"
+        },
+        {
+          "file": "monsters/parts/leg_darkD.png",
+          "label": "Darkd"
+        },
+        {
+          "file": "monsters/parts/leg_darkE.png",
+          "label": "Darke"
+        },
+        {
+          "file": "monsters/parts/leg_greenA.png",
+          "label": "Greena"
+        },
+        {
+          "file": "monsters/parts/leg_greenB.png",
+          "label": "Greenb"
+        },
+        {
+          "file": "monsters/parts/leg_greenC.png",
+          "label": "Greenc"
+        },
+        {
+          "file": "monsters/parts/leg_greenD.png",
+          "label": "Greend"
+        },
+        {
+          "file": "monsters/parts/leg_greenE.png",
+          "label": "Greene"
+        },
+        {
+          "file": "monsters/parts/leg_redA.png",
+          "label": "Reda"
+        },
+        {
+          "file": "monsters/parts/leg_redB.png",
+          "label": "Redb"
+        },
+        {
+          "file": "monsters/parts/leg_redC.png",
+          "label": "Redc"
+        },
+        {
+          "file": "monsters/parts/leg_redD.png",
+          "label": "Redd"
+        },
+        {
+          "file": "monsters/parts/leg_redE.png",
+          "label": "Rede"
+        },
+        {
+          "file": "monsters/parts/leg_whiteA.png",
+          "label": "Whitea"
+        },
+        {
+          "file": "monsters/parts/leg_whiteB.png",
+          "label": "Whiteb"
+        },
+        {
+          "file": "monsters/parts/leg_whiteC.png",
+          "label": "Whitec"
+        },
+        {
+          "file": "monsters/parts/leg_whiteD.png",
+          "label": "Whited"
+        },
+        {
+          "file": "monsters/parts/leg_whiteE.png",
+          "label": "Whitee"
+        },
+        {
+          "file": "monsters/parts/leg_yellowA.png",
+          "label": "Yellowa"
+        },
+        {
+          "file": "monsters/parts/leg_yellowB.png",
+          "label": "Yellowb"
+        },
+        {
+          "file": "monsters/parts/leg_yellowC.png",
+          "label": "Yellowc"
+        },
+        {
+          "file": "monsters/parts/leg_yellowD.png",
+          "label": "Yellowd"
+        },
+        {
+          "file": "monsters/parts/leg_yellowE.png",
+          "label": "Yellowe"
+        }
+      ]
+    },
+    {
+      "key": "eye",
+      "label": "Yeux",
+      "required": true,
+      "items": [
+        {
+          "file": "monsters/parts/eye_angry_blue.png",
+          "label": "Angry blue"
+        },
+        {
+          "file": "monsters/parts/eye_angry_green.png",
+          "label": "Angry green"
+        },
+        {
+          "file": "monsters/parts/eye_angry_red.png",
+          "label": "Angry red"
+        },
+        {
+          "file": "monsters/parts/eye_blue.png",
+          "label": "Blue"
+        },
+        {
+          "file": "monsters/parts/eye_closed_feminine.png",
+          "label": "Closed feminine"
+        },
+        {
+          "file": "monsters/parts/eye_closed_happy.png",
+          "label": "Closed happy"
+        },
+        {
+          "file": "monsters/parts/eye_cute_dark.png",
+          "label": "Cute dark"
+        },
+        {
+          "file": "monsters/parts/eye_cute_light.png",
+          "label": "Cute light"
+        },
+        {
+          "file": "monsters/parts/eye_dead.png",
+          "label": "Dead"
+        },
+        {
+          "file": "monsters/parts/eye_human.png",
+          "label": "Human"
+        },
+        {
+          "file": "monsters/parts/eye_human_blue.png",
+          "label": "Human blue"
+        },
+        {
+          "file": "monsters/parts/eye_human_green.png",
+          "label": "Human green"
+        },
+        {
+          "file": "monsters/parts/eye_human_red.png",
+          "label": "Human red"
+        },
+        {
+          "file": "monsters/parts/eye_psycho_dark.png",
+          "label": "Psycho dark"
+        },
+        {
+          "file": "monsters/parts/eye_psycho_light.png",
+          "label": "Psycho light"
+        },
+        {
+          "file": "monsters/parts/eye_red.png",
+          "label": "Red"
+        },
+        {
+          "file": "monsters/parts/eye_yellow.png",
+          "label": "Yellow"
+        }
+      ]
+    },
+    {
+      "key": "eyebrow",
+      "label": "Sourcils",
+      "required": false,
+      "items": [
+        {
+          "file": "monsters/parts/eyebrowA.png",
+          "label": "Browa"
+        },
+        {
+          "file": "monsters/parts/eyebrowB.png",
+          "label": "Browb"
+        },
+        {
+          "file": "monsters/parts/eyebrowC.png",
+          "label": "Browc"
+        }
+      ]
+    },
+    {
+      "key": "mouth",
+      "label": "Bouche",
+      "required": true,
+      "items": [
+        {
+          "file": "monsters/parts/mouthA.png",
+          "label": "A"
+        },
+        {
+          "file": "monsters/parts/mouthB.png",
+          "label": "B"
+        },
+        {
+          "file": "monsters/parts/mouthC.png",
+          "label": "C"
+        },
+        {
+          "file": "monsters/parts/mouthD.png",
+          "label": "D"
+        },
+        {
+          "file": "monsters/parts/mouthE.png",
+          "label": "E"
+        },
+        {
+          "file": "monsters/parts/mouthF.png",
+          "label": "F"
+        },
+        {
+          "file": "monsters/parts/mouthG.png",
+          "label": "G"
+        },
+        {
+          "file": "monsters/parts/mouthH.png",
+          "label": "H"
+        },
+        {
+          "file": "monsters/parts/mouthI.png",
+          "label": "I"
+        },
+        {
+          "file": "monsters/parts/mouthJ.png",
+          "label": "J"
+        },
+        {
+          "file": "monsters/parts/mouth_closed_fangs.png",
+          "label": "Closed fangs"
+        },
+        {
+          "file": "monsters/parts/mouth_closed_happy.png",
+          "label": "Closed happy"
+        },
+        {
+          "file": "monsters/parts/mouth_closed_sad.png",
+          "label": "Closed sad"
+        },
+        {
+          "file": "monsters/parts/mouth_closed_teeth.png",
+          "label": "Closed teeth"
+        }
+      ]
+    },
+    {
+      "key": "nose",
+      "label": "Nez",
+      "required": false,
+      "items": [
+        {
+          "file": "monsters/parts/nose_brown.png",
+          "label": "Brown"
+        },
+        {
+          "file": "monsters/parts/nose_green.png",
+          "label": "Green"
+        },
+        {
+          "file": "monsters/parts/nose_red.png",
+          "label": "Red"
+        },
+        {
+          "file": "monsters/parts/nose_yellow.png",
+          "label": "Yellow"
+        }
+      ]
+    },
+    {
+      "key": "detail",
+      "label": "Corne / oreille / antenne",
+      "required": false,
+      "items": [
+        {
+          "file": "monsters/parts/detail_blue_antenna_large.png",
+          "label": "Blue antenna large"
+        },
+        {
+          "file": "monsters/parts/detail_blue_antenna_small.png",
+          "label": "Blue antenna small"
+        },
+        {
+          "file": "monsters/parts/detail_blue_ear.png",
+          "label": "Blue ear"
+        },
+        {
+          "file": "monsters/parts/detail_blue_ear_round.png",
+          "label": "Blue ear round"
+        },
+        {
+          "file": "monsters/parts/detail_blue_eye.png",
+          "label": "Blue eye"
+        },
+        {
+          "file": "monsters/parts/detail_blue_horn_large.png",
+          "label": "Blue horn large"
+        },
+        {
+          "file": "monsters/parts/detail_blue_horn_small.png",
+          "label": "Blue horn small"
+        },
+        {
+          "file": "monsters/parts/detail_dark_antenna_large.png",
+          "label": "Dark antenna large"
+        },
+        {
+          "file": "monsters/parts/detail_dark_antenna_small.png",
+          "label": "Dark antenna small"
+        },
+        {
+          "file": "monsters/parts/detail_dark_ear.png",
+          "label": "Dark ear"
+        },
+        {
+          "file": "monsters/parts/detail_dark_ear_round.png",
+          "label": "Dark ear round"
+        },
+        {
+          "file": "monsters/parts/detail_dark_eye.png",
+          "label": "Dark eye"
+        },
+        {
+          "file": "monsters/parts/detail_dark_horn_large.png",
+          "label": "Dark horn large"
+        },
+        {
+          "file": "monsters/parts/detail_dark_horn_small.png",
+          "label": "Dark horn small"
+        },
+        {
+          "file": "monsters/parts/detail_green_antenna_large.png",
+          "label": "Green antenna large"
+        },
+        {
+          "file": "monsters/parts/detail_green_antenna_small.png",
+          "label": "Green antenna small"
+        },
+        {
+          "file": "monsters/parts/detail_green_ear.png",
+          "label": "Green ear"
+        },
+        {
+          "file": "monsters/parts/detail_green_ear_round.png",
+          "label": "Green ear round"
+        },
+        {
+          "file": "monsters/parts/detail_green_eye.png",
+          "label": "Green eye"
+        },
+        {
+          "file": "monsters/parts/detail_green_horn_large.png",
+          "label": "Green horn large"
+        },
+        {
+          "file": "monsters/parts/detail_green_horn_small.png",
+          "label": "Green horn small"
+        },
+        {
+          "file": "monsters/parts/detail_red_antenna_large.png",
+          "label": "Red antenna large"
+        },
+        {
+          "file": "monsters/parts/detail_red_antenna_small.png",
+          "label": "Red antenna small"
+        },
+        {
+          "file": "monsters/parts/detail_red_ear.png",
+          "label": "Red ear"
+        },
+        {
+          "file": "monsters/parts/detail_red_ear_round.png",
+          "label": "Red ear round"
+        },
+        {
+          "file": "monsters/parts/detail_red_eye.png",
+          "label": "Red eye"
+        },
+        {
+          "file": "monsters/parts/detail_red_horn_large.png",
+          "label": "Red horn large"
+        },
+        {
+          "file": "monsters/parts/detail_red_horn_small.png",
+          "label": "Red horn small"
+        },
+        {
+          "file": "monsters/parts/detail_white_antenna_large.png",
+          "label": "White antenna large"
+        },
+        {
+          "file": "monsters/parts/detail_white_antenna_small.png",
+          "label": "White antenna small"
+        },
+        {
+          "file": "monsters/parts/detail_white_ear.png",
+          "label": "White ear"
+        },
+        {
+          "file": "monsters/parts/detail_white_ear_round.png",
+          "label": "White ear round"
+        },
+        {
+          "file": "monsters/parts/detail_white_eye.png",
+          "label": "White eye"
+        },
+        {
+          "file": "monsters/parts/detail_white_horn_large.png",
+          "label": "White horn large"
+        },
+        {
+          "file": "monsters/parts/detail_white_horn_small.png",
+          "label": "White horn small"
+        },
+        {
+          "file": "monsters/parts/detail_yellow_antenna_large.png",
+          "label": "Yellow antenna large"
+        },
+        {
+          "file": "monsters/parts/detail_yellow_antenna_small.png",
+          "label": "Yellow antenna small"
+        },
+        {
+          "file": "monsters/parts/detail_yellow_ear.png",
+          "label": "Yellow ear"
+        },
+        {
+          "file": "monsters/parts/detail_yellow_ear_round.png",
+          "label": "Yellow ear round"
+        },
+        {
+          "file": "monsters/parts/detail_yellow_eye.png",
+          "label": "Yellow eye"
+        },
+        {
+          "file": "monsters/parts/detail_yellow_horn_large.png",
+          "label": "Yellow horn large"
+        },
+        {
+          "file": "monsters/parts/detail_yellow_horn_small.png",
+          "label": "Yellow horn small"
+        }
+      ]
+    },
+    {
+      "key": "snot",
+      "label": "Morve",
+      "required": false,
+      "items": [
+        {
+          "file": "monsters/parts/snot_large.png",
+          "label": "Large"
+        },
+        {
+          "file": "monsters/parts/snot_small.png",
+          "label": "Small"
+        }
+      ]
+    }
+  ]
+}

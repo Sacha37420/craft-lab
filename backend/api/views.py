@@ -1,5 +1,7 @@
 import base64
 import binascii
+import mimetypes
+import uuid
 
 from django.conf import settings
 from django.db.models import ProtectedError
@@ -36,6 +38,8 @@ from .models import (
     Projectile,
     RecipeIngredient,
     RelayTicket,
+    RigTemplate,
+    SpriteAsset,
     StatusEffect,
     Tool,
     UserRecord,
@@ -62,6 +66,8 @@ from .serializers import (
     MonsterSkillSerializer,
     ProjectileSerializer,
     RecipeIngredientSerializer,
+    RigTemplateSerializer,
+    SpriteAssetSerializer,
     StatusEffectSerializer,
     ToolSerializer,
     UserRecordSerializer,
@@ -501,7 +507,113 @@ class MonsterViewSet(viewsets.ModelViewSet):
 
         monster.icon_path = relative_path
         monster.save(update_fields=['icon_path'])
+
+        # Lot 10 (bis) : une icône de monstre (IA/upload/composite du montage par pièces) est aussi un
+        # asset "monstre assemblé" réutilisable ailleurs — upsert par file_path (déterministe par
+        # monstre, cf. relative_path ci-dessus) plutôt qu'une nouvelle ligne à chaque régénération,
+        # jamais via SpriteAssetViewSet (source cc0-bundled mise à part, c'est le seul chemin
+        # d'écriture qui ne passe pas par cette action générique).
+        SpriteAsset.objects.update_or_create(
+            file_path=relative_path,
+            defaults={
+                'name': monster.name,
+                'category': SpriteAsset.Category.MONSTER_CREATURE,
+                'source': SpriteAsset.Source.UPLOAD if upload is not None else SpriteAsset.Source.AI_GENERATED,
+                'created_by_email': getattr(request.user, 'email', '') or '',
+            },
+        )
         return Response(self.get_serializer(monster).data)
+
+    @action(detail=True, methods=['post'], url_path='apply-template')
+    def apply_template(self, request, pk=None):
+        """
+        Lot 11 — matérialise un `RigTemplate` en vrai `Monster.rig` (remplace intégralement le rig
+        existant, comme un nouveau montage manuel depuis zéro — cf. cahier des charges : "positions/
+        chorégraphies par défaut copiées telles quelles dans Monster.rig, éditables ensuite avec les
+        outils déjà existants"). Ne touche à rien d'autre (stats, icon_path...).
+
+        Body : `{"template_id": <int>, "slot_assets": {"<slot_key>": <SpriteAsset id>, ...},
+        "segment_count"?: <int>}` — `segment_count` uniquement pertinent pour un gabarit à slot
+        repeatable (Ver/serpent), ignoré sinon.
+        """
+        monster = self.get_object()
+        template_id = request.data.get('template_id')
+        slot_assets = request.data.get('slot_assets') or {}
+        segment_count = request.data.get('segment_count')
+
+        try:
+            template = RigTemplate.objects.get(pk=template_id)
+        except (RigTemplate.DoesNotExist, ValueError, TypeError):
+            raise NotFound(f"Gabarit inconnu : '{template_id}'.")
+
+        parts = []
+        # slot_key -> partId (slot simple) ou slot_key -> [partId, ...] (slot repeatable, un id par segment).
+        slot_to_part_ids: dict = {}
+        for slot in template.slots:
+            slot_key = slot['slot_key']
+            asset_id = slot_assets.get(slot_key)
+            if asset_id is None:
+                if slot.get('required', True):
+                    raise ValidationError({'slot_assets': f"Image requise pour le slot '{slot_key}'."})
+                continue
+            if slot.get('repeatable'):
+                count = max(1, int(segment_count or slot.get('default_count') or 1))
+                part_ids = []
+                for i in range(count):
+                    part_id = str(uuid.uuid4())
+                    part_ids.append(part_id)
+                    parts.append({
+                        'id': part_id, 'assetId': asset_id,
+                        'x': slot['default_x'] * i, 'y': slot['default_y'] * i,
+                        'flip': False, 'isWeapon': False, 'collidesTerrain': False,
+                    })
+                slot_to_part_ids[slot_key] = part_ids
+            else:
+                part_id = str(uuid.uuid4())
+                slot_to_part_ids[slot_key] = part_id
+                parts.append({
+                    'id': part_id, 'assetId': asset_id,
+                    'x': slot['default_x'], 'y': slot['default_y'],
+                    'flip': False, 'isWeapon': False, 'collidesTerrain': False,
+                })
+
+        skills = []
+        for skill in template.default_skills:
+            new_steps = []
+            for step in skill['steps']:
+                new_poses = {}
+                for slot_key, pose_or_wave in step['poses'].items():
+                    mapped = slot_to_part_ids.get(slot_key)
+                    if mapped is None:
+                        continue  # slot optionnel non choisi par l'utilisateur — ignoré.
+                    if isinstance(mapped, list):
+                        # Slot repeatable : `pose_or_wave` est une liste de longueur `wavelength` (une
+                        # "photo" de la vague à cette étape) — le segment i lit toujours l'entrée
+                        # i % wavelength ; cf. RigTemplate.default_skills (models.py) pour le détail.
+                        wavelength = len(pose_or_wave)
+                        for i, part_id in enumerate(mapped):
+                            new_poses[part_id] = dict(pose_or_wave[i % wavelength])
+                    else:
+                        new_poses[mapped] = dict(pose_or_wave)
+                new_steps.append({'durationMs': step['durationMs'], 'poses': new_poses})
+            skills.append({'id': str(uuid.uuid4()), 'name': skill['name'], 'type': skill['type'], 'steps': new_steps})
+
+        monster.rig = {'parts': parts, 'skills': skills}
+        monster.save(update_fields=['rig'])
+        return Response(self.get_serializer(monster).data)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 11 : gabarits de monstre
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class RigTemplateViewSet(viewsets.ReadOnlyModelViewSet):
+    """Lecture seule — les gabarits sont semés par migration (`0016_rigtemplate_bipede.py` et
+    suivantes), aucune UI d'édition dans ce lot (cf. RigTemplateSerializer)."""
+
+    queryset = RigTemplate.objects.all()
+    serializer_class = RigTemplateSerializer
 
 
 class GameMapViewSet(viewsets.ModelViewSet):
@@ -563,6 +675,87 @@ class DepthTierViewSet(viewsets.ModelViewSet):
         spawn = get_object_or_404(DepthTierMonsterSpawn, pk=spawn_id, depth_tier=tier)
         spawn.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRAFT-LAB — Lot 10 : bibliothèque d'assets centralisée
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class SpriteAssetViewSet(viewsets.ModelViewSet):
+    """
+    Lecture filtrable (`?category=`, `?slot_hint=`, `?search=` sur le nom, `?tag=`) ; création par
+    upload (`file` multipart) ou image déjà produite ailleurs (`image_base64`+`mime_type`, même
+    contrat que ItemCategoryViewSetMixin.icon) — jamais les deux à la fois. `source` est déduit du
+    champ effectivement fourni, jamais choisi librement par le client : `cc0-bundled` est réservé à
+    la commande de gestion `import_sprite_library`, jamais atteignable via cette action.
+    """
+
+    queryset = SpriteAsset.objects.all()
+    serializer_class = SpriteAssetSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        category = self.request.query_params.get('category')
+        if category:
+            qs = qs.filter(category=category)
+        slot_hint = self.request.query_params.get('slot_hint')
+        if slot_hint:
+            qs = qs.filter(slot_hint=slot_hint)
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(name__icontains=search)
+        tag = self.request.query_params.get('tag')
+        if tag:
+            qs = qs.filter(tags__contains=[tag])
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        upload = request.FILES.get('file')
+        if upload is not None:
+            image_bytes = upload.read()
+            mime_type = upload.content_type or 'image/png'
+            source = SpriteAsset.Source.UPLOAD
+        else:
+            image_base64 = request.data.get('image_base64')
+            if not image_base64:
+                raise ValidationError({'image_base64': 'Requis (ou "file" en multipart).'})
+            try:
+                image_bytes = base64.b64decode(image_base64, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise ValidationError({'image_base64': "Image invalide (base64 non décodable)."}) from exc
+            mime_type = request.data.get('mime_type') or 'image/png'
+            source = SpriteAsset.Source.AI_GENERATED
+
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            raise ValidationError({'name': 'Requis.'})
+        category = request.data.get('category')
+        valid_categories = {c for c, _ in SpriteAsset.Category.choices}
+        if category not in valid_categories:
+            raise ValidationError({'category': f"Doit être l'une de : {', '.join(sorted(valid_categories))}."})
+        slot_hint = request.data.get('slot_hint') or ''
+
+        tags_raw = request.data.get('tags')
+        if isinstance(tags_raw, list):
+            tags = [str(t).strip() for t in tags_raw if str(t).strip()]
+        elif isinstance(tags_raw, str) and tags_raw:
+            tags = [t.strip() for t in tags_raw.split(',') if t.strip()]
+        else:
+            tags = []
+
+        ext = mimetypes.guess_extension(mime_type) or '.png'
+        relative_path = f'sprite-assets/{category}/{uuid.uuid4().hex}{ext}'
+        try:
+            upload_bytes(request.headers.get('Authorization', ''), relative_path, image_bytes, mime_type)
+        except StorageClientError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        asset = SpriteAsset.objects.create(
+            name=name, category=category, slot_hint=slot_hint, file_path=relative_path,
+            source=source, tags=tags, created_by_email=getattr(request.user, 'email', '') or '',
+        )
+        return Response(self.get_serializer(asset).data, status=status.HTTP_201_CREATED)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

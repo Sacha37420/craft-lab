@@ -1,0 +1,280 @@
+<h4>Déplacement & attaque</h4>
+<p class="hint">
+  Les seuls réglages qui pilotent vraiment le comportement en jeu. Mêmes cases que la modale
+  "Modifier", visibles ici aussi.
+</p>
+<div class="rig-part-toolbar">
+  @for (mv of movementPatterns; track mv.value) {
+    <label class="hint">
+      <input type="checkbox" [checked]="movementPatternsValue().includes(mv.value)" (change)="toggleMovementPattern(mv.value)" />
+      {{ mv.label }}
+    </label>
+  }
+</div>
+<div class="rig-part-toolbar">
+  <label class="hint">Vitesse de marche
+    <input type="number" step="1" style="width:70px;" [value]="moveSpeed()" (change)="setMoveSpeed($any($event.target).valueAsNumber)" />
+  </label>
+  <label class="hint">Vitesse de poursuite/fuite
+    <input type="number" step="1" style="width:70px;" [value]="chaseSpeed()" (change)="setChaseSpeed($any($event.target).valueAsNumber)" />
+  </label>
+  <label class="hint">Force de saut
+    <input type="number" step="10" style="width:70px;" [value]="jumpStrength()" (change)="setJumpStrength($any($event.target).valueAsNumber)" />
+  </label>
+  <label class="hint">Portée d'attaque (cases)
+    <input type="number" step="0.1" style="width:60px;" [value]="attackRangeTiles()" (change)="setAttackRangeTiles($any($event.target).valueAsNumber)" />
+  </label>
+</div>
+<p class="hint">
+  ⚠ La portée d'attaque ci-dessus ne s'applique qu'à un monstre SANS pièce "arme" dans son montage
+  (cf. plus bas) — avec une pièce arme, les dégâts partent au contact réel, cette portée est ignorée.
+</p>
+
+@if (templates().length > 0) {
+  <h4 style="margin-top: var(--space-4);">Créer depuis un gabarit</h4>
+  <p class="hint">
+    Un point de départ (ossature + chorégraphies idle/marche/saut/attaque) — choisis une image par
+    pièce, applique, puis modifie comme n'importe quel montage manuel ci-dessous.
+  </p>
+  <div class="rig-part-toolbar">
+    <select (change)="selectTemplate($any($event.target).value ? +$any($event.target).value : null)">
+      <option value="">— Choisir un gabarit —</option>
+      @for (t of templates(); track t.id) {
+        <option [value]="t.id" [selected]="t.id === selectedTemplateId()">{{ t.name }}</option>
+      }
+    </select>
+  </div>
+
+  @if (selectedTemplate(); as tpl) {
+    <p class="hint">{{ tpl.description }}</p>
+    @for (slot of tpl.slots; track slot.slot_key) {
+      <div class="ai-pack-category">
+        <div class="ai-pack-category-toggle">
+          {{ slot.label }}{{ slot.required ? ' *' : ' (optionnel)' }}
+          @if (templateSlotAssets().has(slot.slot_key)) { — sélectionné }
+        </div>
+        <div class="ai-pack-grid">
+          @for (item of templateSlotItems().get(slot.slot_key) ?? []; track item.id) {
+            <button type="button" class="ai-pack-thumb-btn"
+                    [class.ai-pack-thumb-selected]="templateSlotAssets().get(slot.slot_key) === item.id"
+                    [title]="item.name" (click)="pickTemplateSlotAsset(slot.slot_key, item.id)">
+              <img [src]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+            </button>
+          }
+          @if ((templateSlotItems().get(slot.slot_key) ?? []).length === 0) {
+            <p class="hint">Aucune pièce pour ce slot dans la bibliothèque.</p>
+          }
+        </div>
+      </div>
+    }
+    @if (tpl.slots.some(s => s.repeatable)) {
+      <div class="rig-part-toolbar">
+        <label class="hint">Nombre de segments
+          <input type="number" min="2" max="20" style="width:60px;" [value]="templateSegmentCount()"
+                 (change)="setTemplateSegmentCount($any($event.target).valueAsNumber)" />
+        </label>
+      </div>
+    }
+    @if (templateError()) { <div class="alert alert-danger">{{ templateError() }}</div> }
+    <div class="rig-part-toolbar">
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="!templateReady() || applyingTemplate()"
+              (click)="applyTemplate()">
+        {{ applyingTemplate() ? 'Application…' : 'Appliquer le gabarit' }}
+      </button>
+    </div>
+  }
+}
+
+<h4 style="margin-top: var(--space-4);">Assembler un monstre à partir de pièces</h4>
+<p class="hint">
+  Clique une pièce dans la palette CC0 pour l'ajouter, puis fais-la glisser sur l'aperçu pour la
+  positionner. Kenney ne fournit pas de point d'ancrage officiel — le placement est manuel.
+</p>
+
+<div class="ai-image-library">
+  <button type="button" class="btn btn-secondary btn-sm" (click)="toggleShowPrompts()">
+    {{ showPrompts() ? '▾' : '▸' }} Générer mes propres pièces avec un générateur d'image externe (GPT, etc.)
+  </button>
+  @if (showPrompts()) {
+    <p class="hint">
+      Un seul prompt, basé sur les caractéristiques réelles du monstre, qui demande explicitement une
+      image séparée par élément du corps (corps, bras, jambe, yeux, bouche...) plutôt qu'un monstre
+      assemblé en un bloc. ⚠ L'import de vos propres images générées n'est pas encore possible ici —
+      la palette ci-dessous ne propose que les pièces CC0 de la bibliothèque.
+    </p>
+    <div class="ai-pack-category">
+      <div class="ai-pack-category-toggle" style="display:flex; justify-content:flex-end;">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="copyRigPrompt()">
+          {{ promptCopied() ? 'Copié !' : 'Copier le prompt' }}
+        </button>
+      </div>
+      <textarea readonly rows="10" style="width:100%; margin-top: var(--space-2); font-size: var(--text-sm);">{{ rigPrompt() }}</textarea>
+    </div>
+  }
+</div>
+
+@if (loading()) {
+  <p class="hint">Chargement des pièces…</p>
+} @else if (error()) {
+  <div class="alert alert-danger">{{ error() }}</div>
+}
+
+@if (!loading()) {
+  <div class="rig-editor">
+    <div class="rig-canvas" [style.width.px]="canvasSize" [style.height.px]="canvasSize">
+      @for (part of placedParts(); track part.id) {
+        <div class="rig-part"
+          [style.left]="'calc(50% + ' + (part.x + previewFor(part.id).dx) + 'px)'"
+          [style.top]="'calc(50% + ' + (part.y + previewFor(part.id).dy) + 'px)'"
+          [class.rig-part-selected]="selectedId() === part.id"
+          (pointerdown)="startDrag(part.id, $event)"
+          (click)="select(part.id)"
+        >
+          <img [src]="assetUrl(previewFor(part.id).tempAssetId ?? part.assetId)" alt=""
+               [style.transform]="'scaleX(' + (part.flip ? -1 : 1) + ') rotate(' + previewFor(part.id).rotationDeg + 'deg)'"
+               draggable="false" />
+        </div>
+      }
+    </div>
+
+    @if (selectedPart(); as sp) {
+      <div class="rig-part-toolbar">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="toggleFlip(sp.id)">Miroir</button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="sendBackward(sp.id)">Reculer</button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="bringForward(sp.id)">Avancer</button>
+        <button type="button" class="btn btn-danger btn-sm" (click)="remove(sp.id)">Retirer</button>
+      </div>
+
+      <div class="rig-part-toolbar">
+        <button type="button" class="btn btn-secondary btn-sm" [class.ai-pack-thumb-selected]="sp.collidesTerrain" (click)="toggleCollidesTerrain(sp.id)">
+          Collision terrain : {{ sp.collidesTerrain ? 'oui' : 'non' }}
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" [class.ai-pack-thumb-selected]="sp.isWeapon" (click)="toggleWeapon(sp.id)">
+          Pièce arme (dégâts au contact) : {{ sp.isWeapon ? 'oui' : 'non' }}
+        </button>
+      </div>
+    }
+  </div>
+
+  @for (slot of slots(); track slot.key) {
+    <div class="ai-pack-category">
+      <button type="button" class="ai-pack-category-toggle" (click)="togglePalette(slot.key)">
+        {{ openPalette() === slot.key ? '▾' : '▸' }} {{ slot.label }} ({{ slot.items.length }})
+      </button>
+      @if (openPalette() === slot.key) {
+        <div class="ai-pack-grid">
+          @for (item of slot.items; track item.id) {
+            <button type="button" class="ai-pack-thumb-btn" [title]="item.name" (click)="addPart(item.id, slot.key)">
+              <img [src]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+            </button>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <h4 style="margin-top: var(--space-4);">Compétences (mouvements, sauts, attaques...)</h4>
+  <p class="hint">
+    Une compétence = une chorégraphie sur TOUT le montage. "Immobile" et "Déplacement latéral"
+    bouclent tant que le monstre est dans cet état ; "Saut"/"Attaque au contact"/"Impact contre un
+    bloc" se jouent une fois puis reviennent au repos. Sans compétence d'un type donné, le montage
+    reste simplement figé au repos dans ce cas — aucune animation de secours.
+  </p>
+
+  <div class="rig-part-toolbar">
+    <button type="button" class="btn btn-secondary btn-sm" (click)="addSkill()">+ Nouvelle compétence</button>
+  </div>
+
+  <div class="ai-pack-grid" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));">
+    @for (skill of skills(); track skill.id) {
+      <button type="button" class="btn btn-secondary btn-sm" [class.ai-pack-thumb-selected]="selectedSkillId() === skill.id" (click)="selectSkill(skill.id)">
+        {{ skill.name }} — {{ skillTypeOptions.find(o => o.value === skill.type)?.label }}
+      </button>
+    }
+    @if (skills().length === 0) { <p class="hint">Aucune compétence définie.</p> }
+  </div>
+
+  @if (selectedSkill(); as skill) {
+    <div class="rig-editor" style="margin-top: var(--space-3);">
+      <div class="rig-part-toolbar">
+        <label class="hint">Nom
+          <input type="text" [value]="skill.name" (change)="renameSkill(skill.id, $any($event.target).value)" />
+        </label>
+        <label class="hint">Type
+          <select (change)="setSkillType(skill.id, $any($event.target).value)">
+            @for (opt of skillTypeOptions; track opt.value) {
+              <option [value]="opt.value" [selected]="opt.value === skill.type">{{ opt.label }}</option>
+            }
+          </select>
+        </label>
+        <button type="button" class="btn btn-danger btn-sm" (click)="removeSkill(skill.id)">Supprimer la compétence</button>
+      </div>
+
+      <div class="rig-part-toolbar">
+        @for (step of skill.steps; track step.id; let i = $index) {
+          <button type="button" class="btn btn-secondary btn-sm" [class.ai-pack-thumb-selected]="selectedStepId() === step.id" (click)="selectStep(step.id)">
+            Étape {{ i + 1 }} ({{ step.durationMs }}ms)
+          </button>
+        }
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addStep(skill.id)">+ Étape</button>
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="skill.steps.length === 0" (click)="previewPlaying() ? stopPreview() : playPreview(skill)">
+          {{ previewPlaying() ? '■ Arrêter' : '▶ Aperçu' }}
+        </button>
+      </div>
+
+      @if (selectedStep(); as step) {
+        <div class="rig-part-toolbar">
+          <label class="hint">Durée de l'étape (ms)
+            <input type="number" step="50" style="width:70px;" [value]="step.durationMs" (change)="setStepDuration(skill.id, step.id, $any($event.target).valueAsNumber)" />
+          </label>
+          <button type="button" class="btn btn-danger btn-sm" (click)="removeStep(skill.id, step.id)">Retirer cette étape</button>
+        </div>
+
+        <p class="hint">
+          Pose de chaque pièce à cette étape (décalage par rapport à sa position de repos dans le
+          montage ci-dessus) — laissée à 0/0/0 pour une pièce qui ne bouge pas à cette étape.
+        </p>
+        <div class="rig-editor">
+          @for (part of placedParts(); track part.id) {
+            <div class="rig-part-toolbar" style="border-bottom: 1px solid var(--border); padding-bottom: var(--space-2);">
+              <img [src]="assetUrl(part.assetId)" alt="" class="ai-image-thumb" style="width:32px;height:32px;" />
+              <label class="hint">dx
+                <input type="number" step="1" style="width:55px;" [value]="poseFor(step, part.id).dx"
+                  (change)="setPoseDx(skill.id, step.id, part.id, $any($event.target).valueAsNumber)" />
+              </label>
+              <label class="hint">dy
+                <input type="number" step="1" style="width:55px;" [value]="poseFor(step, part.id).dy"
+                  (change)="setPoseDy(skill.id, step.id, part.id, $any($event.target).valueAsNumber)" />
+              </label>
+              <label class="hint">rotation°
+                <input type="number" step="1" style="width:55px;" [value]="poseFor(step, part.id).rotationDeg"
+                  (change)="setPoseRotation(skill.id, step.id, part.id, $any($event.target).valueAsNumber)" />
+              </label>
+              @if (poseFor(step, part.id).tempAssetId) {
+                <img [src]="assetUrl(poseFor(step, part.id).tempAssetId!)" alt="image temporaire" class="ai-image-thumb" style="width:32px;height:32px;" />
+                <button type="button" class="btn btn-secondary btn-sm" (click)="clearTempImage(skill.id, step.id, part.id)">Retirer l'image</button>
+              } @else {
+                <button type="button" class="btn btn-secondary btn-sm" (click)="toggleTempImagePicker(part.id)">Image temporaire…</button>
+              }
+            </div>
+            @if (pickingTempImageFor() === part.id) {
+              <div class="ai-pack-grid">
+                @for (item of effectsItems(); track item.id) {
+                  <button type="button" class="ai-pack-thumb-btn" [title]="item.name" (click)="pickTempImage(skill.id, step.id, part.id, item.id)">
+                    <img [src]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+                  </button>
+                }
+              </div>
+            }
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <div class="ai-panel-actions" style="margin-top: var(--space-3);">
+    <button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="save()">
+      {{ saving() ? 'Envoi…' : 'Enregistrer' }}
+    </button>
+  </div>
+}

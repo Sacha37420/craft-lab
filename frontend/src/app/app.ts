@@ -41,6 +41,7 @@ export class AppComponent {
     { kind: 'link', path: '/catalogue/monstres',     label: 'Monstres',            abbr: 'Mo' },
     { kind: 'link', path: '/catalogue/cartes',       label: 'Cartes',              abbr: 'Ca' },
     { kind: 'link', path: '/catalogue/portails',     label: 'Portails',            abbr: 'Po' },
+    { kind: 'link', path: '/catalogue/bibliotheque', label: 'Bibliothèque',        abbr: 'Bi' },
     { kind: 'section', label: 'Compte' },
     { kind: 'link', path: '/profile', label: 'Profil',  abbr: 'Pr' },
     { kind: 'link', path: '/parametrage', label: 'Paramétrage', abbr: 'Pa' },

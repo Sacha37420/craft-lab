@@ -1,11 +1,13 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { JsonPipe, PercentPipe } from '@angular/common';
+import { PercentPipe } from '@angular/common';
 import {
-  ApiService, CatalogueItem, CatalogueSuggestion, Monster, MonsterDrop, MonsterSkill,
+  ApiService, CatalogueItem, CatalogueSuggestion, Monster, MonsterDrop,
 } from '../../../core/api.service';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
+import { MonsterBuilderComponent } from '../../../shared/monster-builder/monster-builder.component';
+import { describeMonsterForPrompt } from '../../../shared/image-prompt';
 
 const ATTACK_TYPES: { value: Monster['attack_type']; label: string }[] = [
   { value: 'melee', label: 'Corps à corps' },
@@ -13,42 +15,33 @@ const ATTACK_TYPES: { value: Monster['attack_type']; label: string }[] = [
   { value: 'magic', label: 'Magique' },
 ];
 
-const MOVEMENT_PATTERNS: { value: string; label: string }[] = [
-  { value: 'ground', label: 'Au sol' },
-  { value: 'flying', label: 'Vol' },
-  { value: 'jumping', label: 'Saut' },
-  { value: 'chase', label: 'Poursuite' },
-  { value: 'flee', label: 'Fuite' },
-];
-
-/** Monstres (cahier des charges 1.8) — pas un Item : pas de recette, mais mêmes patrons enfants (skills/drops/icône). */
+/**
+ * Monstres (cahier des charges 1.8) — pas un Item : pas de recette, mais mêmes patrons enfants
+ * (drops/icône). Une SEULE modale pour tout (stats, icône, montage/compétences, drops) — avant,
+ * "Modifier" (stats) et "Compétences/Drops" (icône, montage, drops) étaient deux vues séparées
+ * sans raison, l'une ignorant l'existence de l'autre. Icône/montage/drops n'apparaissent qu'une
+ * fois le monstre créé (besoin d'un id réel) — la création reste donc en deux temps (créer d'abord
+ * les stats, puis la modale reste ouverte pour tout le reste) plutôt qu'un formulaire géant.
+ */
 @Component({
   selector: 'app-monsters',
   standalone: true,
-  imports: [FormsModule, JsonPipe, PercentPipe, AiSuggestPanelComponent, AiImagePanelComponent],
+  imports: [FormsModule, PercentPipe, AiSuggestPanelComponent, AiImagePanelComponent, MonsterBuilderComponent],
   templateUrl: './monsters.component.html',
 })
 export class MonstersComponent implements OnInit {
   protected api = inject(ApiService);
 
   readonly attackTypes = ATTACK_TYPES;
-  readonly movementPatterns = MOVEMENT_PATTERNS;
 
   items = signal<Monster[]>([]);
   allItems = signal<CatalogueItem[]>([]);
   loading = signal(true);
   error = signal<string | null>(null);
   showModal = signal(false);
-  showDetail = signal(false);
   editing = signal<Monster | null>(null);
-  detail = signal<Monster | null>(null);
 
   form: Partial<Monster> = {};
-
-  skills = signal<MonsterSkill[]>([]);
-  skillForm: MonsterSkill = { name: '', description: '', parameters: {} };
-  skillParamsText = '{}';
-  skillError = signal<string | null>(null);
 
   drops = signal<MonsterDrop[]>([]);
   dropForm: MonsterDrop = { dropped_item: null, quantity: 1, chance: 1 };
@@ -76,22 +69,18 @@ export class MonstersComponent implements OnInit {
       attack_damage: 1, attack_rate: 1, movement_patterns: [],
     };
     this.editing.set(null);
+    this.drops.set([]);
     this.error.set(null);
     this.showModal.set(true);
   }
 
-  openEdit(item: Monster): void {
-    this.form = { ...item, movement_patterns: [...(item.movement_patterns ?? [])] };
+  open(item: Monster): void {
+    this.form = { ...item };
     this.editing.set(item);
     this.error.set(null);
     this.showModal.set(true);
-  }
-
-  toggleMovement(pattern: string): void {
-    const current = this.form.movement_patterns ?? [];
-    this.form.movement_patterns = current.includes(pattern)
-      ? current.filter(p => p !== pattern)
-      : [...current, pattern];
+    this.loadDrops();
+    this.refreshLookups();
   }
 
   onAiSuggestion(s: CatalogueSuggestion): void {
@@ -108,60 +97,26 @@ export class MonstersComponent implements OnInit {
     };
   }
 
+  /** Rafraîchit `editing` (icône/rig/déplacement/attaque modifiés par le panneau icône ou le
+   * compositeur) sans fermer la modale — l'utilisateur continue d'y travailler après. */
   onIconApplied(): void {
     this.load();
-    const id = this.detail()?.id;
-    if (id) this.api.getMonsters().subscribe({ next: items => this.detail.set(items.find(m => m.id === id) ?? null) });
+    const id = this.editing()?.id;
+    if (id) this.api.getMonsters().subscribe({ next: items => this.editing.set(items.find(m => m.id === id) ?? null) });
   }
 
   imagePromptSeed(item: Monster): string {
-    return item.description ? `${item.name} : ${item.description}` : item.name;
-  }
-
-  openDetail(item: Monster): void {
-    this.detail.set(item);
-    this.showDetail.set(true);
-    this.loadSkills();
-    this.loadDrops();
-    this.refreshLookups();
-  }
-
-  loadSkills(): void {
-    const id = this.detail()?.id;
-    if (!id) return;
-    this.api.getMonsterSkills(id).subscribe({ next: s => this.skills.set(s) });
-  }
-
-  addSkill(): void {
-    const id = this.detail()?.id;
-    if (!id || !this.skillForm.name.trim()) return;
-    let parameters: Record<string, unknown>;
-    try {
-      parameters = JSON.parse(this.skillParamsText || '{}');
-    } catch {
-      this.skillError.set('Paramètres : JSON invalide.');
-      return;
-    }
-    this.skillError.set(null);
-    this.api.addMonsterSkill(id, { ...this.skillForm, parameters }).subscribe({
-      next: () => { this.skillForm = { name: '', description: '', parameters: {} }; this.skillParamsText = '{}'; this.loadSkills(); },
-    });
-  }
-
-  removeSkill(skillId: number): void {
-    const id = this.detail()?.id;
-    if (!id) return;
-    this.api.removeMonsterSkill(id, skillId).subscribe({ next: () => this.loadSkills() });
+    return describeMonsterForPrompt(item);
   }
 
   loadDrops(): void {
-    const id = this.detail()?.id;
+    const id = this.editing()?.id;
     if (!id) return;
     this.api.getMonsterDrops(id).subscribe({ next: d => this.drops.set(d) });
   }
 
   addDrop(): void {
-    const id = this.detail()?.id;
+    const id = this.editing()?.id;
     if (!id || !this.dropForm.dropped_item) return;
     this.api.addMonsterDrop(id, this.dropForm).subscribe({
       next: () => { this.dropForm = { dropped_item: null, quantity: 1, chance: 1 }; this.loadDrops(); },
@@ -169,18 +124,21 @@ export class MonstersComponent implements OnInit {
   }
 
   removeDrop(dropId: number): void {
-    const id = this.detail()?.id;
+    const id = this.editing()?.id;
     if (!id) return;
     this.api.removeMonsterDrop(id, dropId).subscribe({ next: () => this.loadDrops() });
   }
 
+  /** Ne ferme plus la modale (avant : fermeture automatique après "Modifier") — sur une création,
+   * bascule directement en mode édition dans la MÊME modale pour donner accès à l'icône/au montage
+   * sans avoir à rouvrir quoi que ce soit. */
   save(): void {
     const id = this.editing()?.id;
     const obs = id
       ? this.api.updateMonster(id, this.form)
       : this.api.createMonster(this.form);
     obs.subscribe({
-      next: () => { this.showModal.set(false); this.load(); },
+      next: created => { this.editing.set(created); this.load(); },
       error: err => this.error.set(err.error?.name?.[0] ?? `Erreur ${err.status}`),
     });
   }
@@ -193,5 +151,5 @@ export class MonstersComponent implements OnInit {
     });
   }
 
-  close(): void { this.showModal.set(false); this.showDetail.set(false); }
+  close(): void { this.showModal.set(false); }
 }

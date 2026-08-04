@@ -1,0 +1,412 @@
+{
+  "categories": [
+    {
+      "key": "blocks",
+      "label": "Blocks / matériaux",
+      "items": [
+        {
+          "file": "blocks/coinBronze.png",
+          "label": "Coinbronze"
+        },
+        {
+          "file": "blocks/coinGold.png",
+          "label": "Coingold"
+        },
+        {
+          "file": "blocks/coinSilver.png",
+          "label": "Coinsilver"
+        },
+        {
+          "file": "blocks/dirt.png",
+          "label": "Dirt"
+        },
+        {
+          "file": "blocks/dirtCenter.png",
+          "label": "Dirtcenter"
+        },
+        {
+          "file": "blocks/gemBlue.png",
+          "label": "Gemblue"
+        },
+        {
+          "file": "blocks/gemGreen.png",
+          "label": "Gemgreen"
+        },
+        {
+          "file": "blocks/gemRed.png",
+          "label": "Gemred"
+        },
+        {
+          "file": "blocks/gemYellow.png",
+          "label": "Gemyellow"
+        },
+        {
+          "file": "blocks/grass.png",
+          "label": "Grass"
+        },
+        {
+          "file": "blocks/grassCenter.png",
+          "label": "Grasscenter"
+        },
+        {
+          "file": "blocks/rock.png",
+          "label": "Rock"
+        },
+        {
+          "file": "blocks/sand.png",
+          "label": "Sand"
+        },
+        {
+          "file": "blocks/sandCenter.png",
+          "label": "Sandcenter"
+        },
+        {
+          "file": "blocks/stone.png",
+          "label": "Stone"
+        },
+        {
+          "file": "blocks/stoneCenter.png",
+          "label": "Stonecenter"
+        }
+      ]
+    },
+    {
+      "key": "characters",
+      "label": "Personnage (poses)",
+      "items": [
+        {
+          "file": "characters/adventurer_fall.png",
+          "label": "Adventurer fall"
+        },
+        {
+          "file": "characters/adventurer_idle.png",
+          "label": "Adventurer idle"
+        },
+        {
+          "file": "characters/adventurer_jump.png",
+          "label": "Adventurer jump"
+        },
+        {
+          "file": "characters/adventurer_walk1.png",
+          "label": "Adventurer walk1"
+        },
+        {
+          "file": "characters/adventurer_walk2.png",
+          "label": "Adventurer walk2"
+        },
+        {
+          "file": "characters/female_fall.png",
+          "label": "Female fall"
+        },
+        {
+          "file": "characters/female_idle.png",
+          "label": "Female idle"
+        },
+        {
+          "file": "characters/female_jump.png",
+          "label": "Female jump"
+        },
+        {
+          "file": "characters/female_walk1.png",
+          "label": "Female walk1"
+        },
+        {
+          "file": "characters/female_walk2.png",
+          "label": "Female walk2"
+        },
+        {
+          "file": "characters/player_fall.png",
+          "label": "Player fall"
+        },
+        {
+          "file": "characters/player_idle.png",
+          "label": "Player idle"
+        },
+        {
+          "file": "characters/player_jump.png",
+          "label": "Player jump"
+        },
+        {
+          "file": "characters/player_walk1.png",
+          "label": "Player walk1"
+        },
+        {
+          "file": "characters/player_walk2.png",
+          "label": "Player walk2"
+        },
+        {
+          "file": "characters/soldier_fall.png",
+          "label": "Soldier fall"
+        },
+        {
+          "file": "characters/soldier_idle.png",
+          "label": "Soldier idle"
+        },
+        {
+          "file": "characters/soldier_jump.png",
+          "label": "Soldier jump"
+        },
+        {
+          "file": "characters/soldier_walk1.png",
+          "label": "Soldier walk1"
+        },
+        {
+          "file": "characters/soldier_walk2.png",
+          "label": "Soldier walk2"
+        },
+        {
+          "file": "characters/zombie_fall.png",
+          "label": "Zombie fall"
+        },
+        {
+          "file": "characters/zombie_idle.png",
+          "label": "Zombie idle"
+        },
+        {
+          "file": "characters/zombie_jump.png",
+          "label": "Zombie jump"
+        },
+        {
+          "file": "characters/zombie_walk1.png",
+          "label": "Zombie walk1"
+        },
+        {
+          "file": "characters/zombie_walk2.png",
+          "label": "Zombie walk2"
+        }
+      ]
+    },
+    {
+      "key": "monsters-creatures",
+      "label": "Monstres (déjà assemblés)",
+      "items": [
+        {
+          "file": "monsters/creatures/barnacle.png",
+          "label": "Barnacle"
+        },
+        {
+          "file": "monsters/creatures/bat.png",
+          "label": "Bat"
+        },
+        {
+          "file": "monsters/creatures/bee.png",
+          "label": "Bee"
+        },
+        {
+          "file": "monsters/creatures/fishGreen.png",
+          "label": "Fishgreen"
+        },
+        {
+          "file": "monsters/creatures/fishPink.png",
+          "label": "Fishpink"
+        },
+        {
+          "file": "monsters/creatures/fly.png",
+          "label": "Fly"
+        },
+        {
+          "file": "monsters/creatures/frog.png",
+          "label": "Frog"
+        },
+        {
+          "file": "monsters/creatures/ghost_normal.png",
+          "label": "Ghost normal"
+        },
+        {
+          "file": "monsters/creatures/grassBlock.png",
+          "label": "Grassblock"
+        },
+        {
+          "file": "monsters/creatures/ladyBug.png",
+          "label": "Ladybug"
+        },
+        {
+          "file": "monsters/creatures/slime.png",
+          "label": "Slime"
+        },
+        {
+          "file": "monsters/creatures/snail.png",
+          "label": "Snail"
+        }
+      ]
+    },
+    {
+      "key": "weapons",
+      "label": "Armes",
+      "items": [
+        {
+          "file": "weapons/battle_axe.png",
+          "label": "Battle axe"
+        },
+        {
+          "file": "weapons/gladius_01.png",
+          "label": "Gladius 01"
+        },
+        {
+          "file": "weapons/gladius_02.png",
+          "label": "Gladius 02"
+        },
+        {
+          "file": "weapons/hand_axe_1.png",
+          "label": "Hand axe 1"
+        },
+        {
+          "file": "weapons/hand_axe_2.png",
+          "label": "Hand axe 2"
+        },
+        {
+          "file": "weapons/heavy_sword_01.png",
+          "label": "Heavy sword 01"
+        },
+        {
+          "file": "weapons/long_sword_01.png",
+          "label": "Long sword 01"
+        },
+        {
+          "file": "weapons/medieval_sword_01.png",
+          "label": "Medieval sword 01"
+        },
+        {
+          "file": "weapons/muramasa_01.png",
+          "label": "Muramasa 01"
+        },
+        {
+          "file": "weapons/poleaxe_1.png",
+          "label": "Poleaxe 1"
+        },
+        {
+          "file": "weapons/poleaxe_2.png",
+          "label": "Poleaxe 2"
+        },
+        {
+          "file": "weapons/poleaxe_3.png",
+          "label": "Poleaxe 3"
+        },
+        {
+          "file": "weapons/scimitar_01.png",
+          "label": "Scimitar 01"
+        },
+        {
+          "file": "weapons/scimitar_02.png",
+          "label": "Scimitar 02"
+        },
+        {
+          "file": "weapons/tanto_01.png",
+          "label": "Tanto 01"
+        },
+        {
+          "file": "weapons/tomahawk.png",
+          "label": "Tomahawk"
+        }
+      ]
+    },
+    {
+      "key": "tools",
+      "label": "Outils",
+      "items": [
+        {
+          "file": "tools/shovel-01.png",
+          "label": "Shovel 01"
+        },
+        {
+          "file": "tools/shovel-02.png",
+          "label": "Shovel 02"
+        },
+        {
+          "file": "tools/shovel-03.png",
+          "label": "Shovel 03"
+        }
+      ]
+    },
+    {
+      "key": "effects",
+      "label": "Effets / attaques (boules de feu, magie, étincelles...)",
+      "items": [
+        {
+          "file": "effects/fire-spell-1.png",
+          "label": "Fire spell 1"
+        },
+        {
+          "file": "effects/fire-spell-2.png",
+          "label": "Fire spell 2"
+        },
+        {
+          "file": "effects/fire-spell-3.png",
+          "label": "Fire spell 3"
+        },
+        {
+          "file": "effects/fire-spell-4.png",
+          "label": "Fire spell 4"
+        },
+        {
+          "file": "effects/fire-spell-5.png",
+          "label": "Fire spell 5"
+        },
+        {
+          "file": "effects/fire-spell-6.png",
+          "label": "Fire spell 6"
+        },
+        {
+          "file": "effects/fire_01.png",
+          "label": "Fire 01"
+        },
+        {
+          "file": "effects/fire_02.png",
+          "label": "Fire 02"
+        },
+        {
+          "file": "effects/fireball.png",
+          "label": "Fireball"
+        },
+        {
+          "file": "effects/flame_01.png",
+          "label": "Flame 01"
+        },
+        {
+          "file": "effects/flame_02.png",
+          "label": "Flame 02"
+        },
+        {
+          "file": "effects/flame_03.png",
+          "label": "Flame 03"
+        },
+        {
+          "file": "effects/magic_01.png",
+          "label": "Magic 01"
+        },
+        {
+          "file": "effects/magic_02.png",
+          "label": "Magic 02"
+        },
+        {
+          "file": "effects/magic_03.png",
+          "label": "Magic 03"
+        },
+        {
+          "file": "effects/smoke_01.png",
+          "label": "Smoke 01"
+        },
+        {
+          "file": "effects/smoke_02.png",
+          "label": "Smoke 02"
+        },
+        {
+          "file": "effects/spark_01.png",
+          "label": "Spark 01"
+        },
+        {
+          "file": "effects/spark_02.png",
+          "label": "Spark 02"
+        },
+        {
+          "file": "effects/star_01.png",
+          "label": "Star 01"
+        },
+        {
+          "file": "effects/star_02.png",
+          "label": "Star 02"
+        }
+      ]
+    }
+  ]
+}

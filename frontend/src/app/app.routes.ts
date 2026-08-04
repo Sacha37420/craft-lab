@@ -10,6 +10,7 @@ import { StatusEffectsComponent } from './pages/catalogue/status-effects/status-
 import { MonstersComponent } from './pages/catalogue/monsters/monsters.component';
 import { MapsComponent } from './pages/catalogue/maps/maps.component';
 import { PortalsComponent } from './pages/catalogue/portals/portals.component';
+import { BibliothequeComponent } from './pages/catalogue/bibliotheque/bibliotheque.component';
 import { ParametrageComponent } from './pages/parametrage/parametrage.component';
 
 export const routes: Routes = [
@@ -24,6 +25,7 @@ export const routes: Routes = [
   { path: 'catalogue/monstres',      component: MonstersComponent },
   { path: 'catalogue/cartes',        component: MapsComponent },
   { path: 'catalogue/portails',      component: PortalsComponent },
+  { path: 'catalogue/bibliotheque',  component: BibliothequeComponent },
   {
     path: 'jouer',
     loadComponent: () => import('./pages/play/play.component').then(m => m.PlayComponent),

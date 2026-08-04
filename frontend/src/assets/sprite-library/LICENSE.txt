@@ -1,0 +1,36 @@
+Bibliothèque de sprites libres — craft-lab
+===========================================
+
+Toutes les images de ce dossier sont dans le domaine public (licence CC0 —
+Creative Commons Zero, http://creativecommons.org/publicdomain/zero/1.0/) :
+utilisables librement en projet personnel ou commercial, sans obligation
+d'attribution. Les crédits ci-dessous sont donnés par courtoisie envers les
+auteurs, comme le suggèrent leurs pages respectives.
+
+blocks/, characters/, monsters/creatures/, monsters/parts/, effects/fireball.png
+  Kenney Vleugels (Kenney.nl) — "Platformer Art Deluxe", "Platformer
+  Characters", "Monster Builder Pack". CC0. https://kenney.nl
+
+effects/fire_*.png, effects/flame_*.png, effects/magic_*.png,
+effects/spark_*.png, effects/star_*.png, effects/smoke_*.png
+  Kenney Vleugels (Kenney.nl) — "Particle Pack". CC0. https://kenney.nl
+
+tools/shovel-*.png
+  Kenney Vleugels (Kenney.nl) — "Roguelike/RPG pack". CC0. https://kenney.nl
+
+weapons/*.png (épées, dagues)
+  Compilation "CC0 Sword Icons" (OpenGameArt.org), sources Openclipart.org
+  (domaine public). https://opengameart.org/content/cc0-sword-icons
+
+weapons/*.png (haches)
+  Compilation "CC0 Axe Icons" (OpenGameArt.org), sources Openclipart.org
+  (domaine public). https://opengameart.org/content/cc0-axe-icons
+
+effects/fire-spell-*.png
+  "Fire Spell Icon Pack" par beddedOtaku (OpenGameArt.org). CC0.
+  https://opengameart.org/content/fire-spell-icon-pack
+
+Aucune image de ce dossier n'est générée par IA — ce sont des packs d'assets
+créés par des artistes tiers, sélectionnés pour leur licence CC0 sans
+ambiguïté. Voir aussi le panneau "Générer par IA" du catalogue pour la
+génération d'images à la demande (Gemini/Mistral/OpenAI).

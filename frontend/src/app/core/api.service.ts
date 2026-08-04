@@ -100,6 +100,30 @@ export interface Block extends CatalogueEntityBase {
   contact_status_effect_name?: string | null;
 }
 
+// ── Bibliothèque d'assets centralisée — Lot 10 ────────────────────────────
+
+export type SpriteAssetCategory =
+  | 'block' | 'character' | 'monster-creature' | 'monster-part' | 'weapon' | 'tool' | 'effect' | 'other';
+export type SpriteAssetSource = 'cc0-bundled' | 'ai-generated' | 'upload';
+
+export interface SpriteAsset {
+  id: number;
+  name: string;
+  category: SpriteAssetCategory;
+  /** Slot d'un gabarit de monstre (body/arm/leg/...) — pertinent seulement si category='monster-part'. */
+  slot_hint: string;
+  file_path: string;
+  /** cc0-bundled : chemin relatif statique déjà prêt (assets/sprite-library/...). Le reste : chemin
+   * storage relatif, à préfixer via ApiService.iconUrl() — cf. spriteAssetUrl() qui fait la bonne
+   * chose dans les deux cas, jamais à reconstruire localement. */
+  asset_url: string;
+  source: SpriteAssetSource;
+  tags: string[];
+  created_by_email?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 // ── Catalogue — Lot 4 (monstres et cartes) ────────────────────────────────
 
 export interface MonsterSkill {
@@ -117,6 +141,70 @@ export interface MonsterDrop {
   chance: number;
 }
 
+export interface MonsterRigPart {
+  /** Identifiant stable, généré une fois à l'ajout de la pièce et jamais régénéré — les
+   * chorégraphies (RigSkillStep.poses) y font référence, il doit survivre aux rechargements. */
+  id: string;
+  /** Référence un SpriteAsset (Lot 10) — jamais un chemin brut : cf. ApiService.spriteAssetUrl()
+   * pour la résolution (statique pour le CC0 embarqué, storage pour le contenu utilisateur). */
+  assetId: number;
+  x: number;
+  y: number;
+  flip: boolean;
+  /** Contact avec un joueur = dégâts du monstre + joue la compétence de type 'attack' si une est
+   * définie (cf. RigSkill). */
+  isWeapon?: boolean;
+  /** Vérifie chaque frame le recouvrement avec le terrain — joue la compétence de type 'block-hit'
+   * si une est définie. */
+  collidesTerrain?: boolean;
+}
+
+/** Position ciblée d'UNE pièce à l'intérieur d'une étape de compétence — décalage par rapport à sa
+ * position de repos (celle du montage, pas une position absolue), plus une image temporaire
+ * optionnelle (ex: un éclair de griffe, un SpriteAsset de catégorie 'effect') affichée pendant
+ * cette étape puis retirée à l'étape suivante. */
+export interface RigSkillPose {
+  dx: number;
+  dy: number;
+  rotationDeg: number;
+  tempAssetId?: number;
+}
+
+/** Une étape = une pose cible pour tout ou partie des pièces, tenue `durationMs`, interpolée
+ * linéairement depuis la pose de l'étape précédente (ou le repos, pour la première étape). */
+export interface RigSkillStep {
+  durationMs: number;
+  poses: Record<string, RigSkillPose>;
+}
+
+/**
+ * Compétence = chorégraphie nommée sur TOUT le montage (pas une pièce isolée) — unifie mouvements
+ * simples ET attaques/capacités dans un seul système, plutôt qu'une formule d'oscillation fixe pour
+ * les uns et une réaction de collision figée pour les autres. `type` détermine QUAND GameScene la
+ * joue :
+ *   - 'idle' : en boucle quand le monstre est immobile (aucune si non définie — le montage reste
+ *     alors simplement figé à son repos, jamais d'oscillation générique de secours).
+ *   - 'move-lateral' : en boucle pendant un déplacement horizontal réel.
+ *   - 'jump' : une fois, au moment du saut.
+ *   - 'attack' : une fois, quand une pièce `isWeapon` touche un joueur (déclenche aussi les dégâts,
+ *     cf. GameScene.tickRigCollisions — indépendant de la lecture de l'animation elle-même).
+ *   - 'block-hit' : une fois, quand une pièce `collidesTerrain` touche un block.
+ * 'idle'/'move-lateral' bouclent (dernière étape → première) ; les 3 autres se jouent une fois puis
+ * reviennent au repos. Au plus UNE compétence de chaque type par monstre (la plus récente gagne si
+ * plusieurs sont créées avec le même type).
+ */
+export interface RigSkill {
+  id: string;
+  name: string;
+  type: 'idle' | 'move-lateral' | 'jump' | 'attack' | 'block-hit';
+  steps: RigSkillStep[];
+}
+
+export interface MonsterRig {
+  parts: MonsterRigPart[];
+  skills: RigSkill[];
+}
+
 export interface Monster extends CatalogueEntityBase {
   level: number;
   hp: number;
@@ -125,7 +213,39 @@ export interface Monster extends CatalogueEntityBase {
   attack_type: 'melee' | 'ranged' | 'magic';
   attack_damage: number;
   attack_rate: number;
+  attack_range_tiles: number;
   movement_patterns: string[];
+  move_speed: number;
+  chase_speed: number;
+  jump_strength: number;
+  rig?: MonsterRig;
+}
+
+// ── Gabarits de monstre — Lot 11 ──────────────────────────────────────────
+
+export interface RigTemplateSlot {
+  slot_key: string;
+  label: string;
+  /** SpriteAsset.slot_hint dont ce slot propose les pièces — différent de slot_key (ex: deux slots
+   * "arm-left"/"arm-right" puisent tous deux dans la même catégorie SpriteAsset "arm"). */
+  asset_slot_hint: string;
+  default_x: number;
+  default_y: number;
+  required: boolean;
+  /** Slot instanciable N fois (seul le gabarit "Ver / serpent" l'utilise) — default_x/default_y
+   * représentent alors l'espacement entre deux segments consécutifs, pas une position absolue. */
+  repeatable: boolean;
+  default_count?: number;
+}
+
+export interface RigTemplate {
+  id: number;
+  name: string;
+  description: string;
+  slots: RigTemplateSlot[];
+  /** Structure interne consommée uniquement côté serveur (apply-template) — jamais interprétée ici. */
+  default_skills: unknown[];
+  created_at?: string;
 }
 
 export interface GameMap {
@@ -211,6 +331,8 @@ export interface CharacterState {
   /** {item_id (chaîne côté JSON) : quantité} */
   inventory: Record<string, number>;
   equipped_weapon_id: number | null;
+  /** Préfixe dans assets/sprite-library/characters/ (ex: "adventurer") — cf. PLAYER_SKINS côté play.component. */
+  appearance_skin?: string;
   updated_at?: string;
   /** Présent seulement en réponse du GET — cf. WorldViewSet.character côté backend. */
   created?: boolean;
@@ -271,6 +393,16 @@ export class ApiService {
     if (!path) return '';
     const token = this.kc.getToken();
     return `${this.storageApiUrl}${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  }
+
+  /**
+   * URL utilisable d'un SpriteAsset (Lot 10) — point UNIQUE de résolution, bifurque selon `source`
+   * (cf. SpriteAsset.asset_url côté backend, même décision Lot 10) : cc0-bundled est un chemin
+   * relatif statique déjà prêt à l'emploi (aucune requête storage/token, perf/cache préservés),
+   * tout le reste passe par iconUrl() comme n'importe quelle icône storage.
+   */
+  spriteAssetUrl(asset: SpriteAsset): string {
+    return asset.source === 'cc0-bundled' ? asset.asset_url : this.iconUrl(asset.asset_url);
   }
 
   getMe(): Observable<unknown> {
@@ -501,6 +633,53 @@ export class ApiService {
     return this.http.delete<void>(`${this.base}/api/monsters/${monsterId}/drops/${dropId}/`);
   }
 
+  // ── Bibliothèque d'assets centralisée — Lot 10 ───────────────────────────
+
+  getSpriteAssets(params?: { category?: SpriteAssetCategory; slotHint?: string; search?: string; tag?: string }): Observable<SpriteAsset[]> {
+    const q = new URLSearchParams();
+    if (params?.category) q.set('category', params.category);
+    if (params?.slotHint) q.set('slot_hint', params.slotHint);
+    if (params?.search) q.set('search', params.search);
+    if (params?.tag) q.set('tag', params.tag);
+    const qs = q.toString();
+    return this.http.get<SpriteAsset[]>(`${this.base}/api/sprite-assets/${qs ? '?' + qs : ''}`);
+  }
+
+  /** Upload direct dans la bibliothèque partagée (page Bibliothèque, indépendamment de tout monstre
+   * en cours d'édition) — `source` sera 'upload' côté serveur (déduit du champ `file`, jamais choisi ici). */
+  createSpriteAssetFromFile(
+    name: string, category: SpriteAssetCategory, slotHint: string, tags: string[], file: File,
+  ): Observable<SpriteAsset> {
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('category', category);
+    if (slotHint) formData.append('slot_hint', slotHint);
+    if (tags.length) formData.append('tags', tags.join(','));
+    formData.append('file', file);
+    return this.http.post<SpriteAsset>(`${this.base}/api/sprite-assets/`, formData);
+  }
+
+  deleteSpriteAsset(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/api/sprite-assets/${id}/`);
+  }
+
+  // ── Gabarits de monstre — Lot 11 ──────────────────────────────────────────
+
+  getRigTemplates(): Observable<RigTemplate[]> {
+    return this.http.get<RigTemplate[]>(`${this.base}/api/rig-templates/`);
+  }
+
+  /** Matérialise un gabarit en Monster.rig — remplace intégralement le rig existant. `slotAssets`
+   * doit couvrir tout slot `required` du gabarit (id de SpriteAsset). `segmentCount` ignoré pour
+   * un gabarit sans slot repeatable. */
+  applyRigTemplate(
+    monsterId: number, templateId: number, slotAssets: Record<string, number>, segmentCount?: number,
+  ): Observable<Monster> {
+    return this.http.post<Monster>(`${this.base}/api/monsters/${monsterId}/apply-template/`, {
+      template_id: templateId, slot_assets: slotAssets, segment_count: segmentCount,
+    });
+  }
+
   // ── Cartes — génération par profondeur (1.9) ─────────────────────────────
 
   getGameMaps(): Observable<GameMap[]> {
@@ -578,6 +757,9 @@ export class ApiService {
   }
   getCharacter(worldId: number): Observable<CharacterState> {
     return this.http.get<CharacterState>(`${this.base}/api/worlds/${worldId}/character/`);
+  }
+  updateCharacterAppearance(worldId: number, appearanceSkin: string): Observable<CharacterState> {
+    return this.http.put<CharacterState>(`${this.base}/api/worlds/${worldId}/character/`, { appearance_skin: appearanceSkin });
   }
   saveProgress(
     worldId: number, payload: { block_diff?: Record<string, number | null>; character?: Partial<CharacterState> },

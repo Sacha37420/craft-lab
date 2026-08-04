@@ -1,0 +1,100 @@
+<div class="page">
+  <div class="page-header">
+    <h2>Bibliothèque</h2>
+    <button class="btn btn-primary" (click)="openCreate()">+ Ajouter</button>
+  </div>
+
+  <div class="inline-form">
+    <div class="form-group">
+      <label>Catégorie</label>
+      <select [(ngModel)]="categoryFilter" name="categoryFilter" (ngModelChange)="load()">
+        <option value="">— Toutes —</option>
+        @for (c of categories; track c) {
+          <option [value]="c">{{ categoryLabels[c] }}</option>
+        }
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Recherche</label>
+      <input [(ngModel)]="searchText" name="searchText" placeholder="Nom, tag…" (keyup.enter)="load()" />
+    </div>
+    <button type="button" class="btn btn-secondary" (click)="load()">Rechercher</button>
+  </div>
+
+  @if (error()) { <div class="alert alert-danger">{{ error() }}</div> }
+
+  @if (loading()) {
+    <p class="loading">Chargement…</p>
+  } @else {
+    <div class="catalogue-grid">
+      @for (asset of assets(); track asset.id) {
+        <div class="catalogue-card">
+          <!-- Vignette agrandie via style inline (dimensions seulement, pas de couleur) : cette
+               page est une bibliothèque d'images, la miniature 40x40 des autres pages catalogue
+               (.catalogue-card-icon, accolée au nom) serait ici illisible. -->
+          <img [src]="api.spriteAssetUrl(asset)" alt="" class="catalogue-card-icon"
+               style="width: 100%; height: 120px;" />
+          <div class="catalogue-card-header">
+            <strong>{{ asset.name }}</strong>
+          </div>
+          <p class="catalogue-card-desc">
+            <span class="badge badge-blue">{{ categoryLabels[asset.category] }}</span>
+            <span [class]="sourceBadgeClass(asset)">{{ sourceLabel(asset) }}</span>
+            @if (asset.slot_hint) { <br />Slot : {{ asset.slot_hint }} }
+            @if (asset.tags.length > 0) { <br />{{ asset.tags.join(', ') }} }
+          </p>
+          <div class="catalogue-card-actions">
+            <button class="btn btn-danger btn-sm" (click)="delete(asset)">Supprimer</button>
+          </div>
+        </div>
+      }
+      @if (assets().length === 0) {
+        <p class="empty-state">Aucun sprite dans la bibliothèque.</p>
+      }
+    </div>
+  }
+</div>
+
+@if (showModal()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <h3>Ajouter un sprite</h3>
+
+      <form (ngSubmit)="upload()">
+        <div class="form-group">
+          <label>Nom *</label>
+          <input [(ngModel)]="newName" name="name" required />
+        </div>
+        <div class="form-group">
+          <label>Catégorie *</label>
+          <select [(ngModel)]="newCategory" name="category" required>
+            @for (c of categories; track c) {
+              <option [value]="c">{{ categoryLabels[c] }}</option>
+            }
+          </select>
+        </div>
+        @if (newCategory === 'monster-part') {
+          <div class="form-group">
+            <label>Slot</label>
+            <input [(ngModel)]="newSlotHint" name="slotHint" placeholder="body, arm, leg, eye…" />
+          </div>
+        }
+        <div class="form-group">
+          <label>Tags</label>
+          <input [(ngModel)]="newTags" name="tags" placeholder="tag1, tag2…" />
+        </div>
+        <div class="form-group">
+          <label>Fichier *</label>
+          <input type="file" accept="image/*" (change)="onFileSelected($event)" name="file" required />
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="close()">Annuler</button>
+          <button type="submit" class="btn btn-primary" [disabled]="uploading()">
+            {{ uploading() ? 'Envoi…' : 'Envoyer' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

@@ -72,6 +72,7 @@
             {{ saving() ? 'Sauvegarde…' : 'Sauvegarder' }}
           </button>
           <button type="button" class="btn btn-secondary btn-sm" (click)="toggleCraft()">Artisanat</button>
+          <button type="button" class="btn btn-secondary btn-sm" (click)="toggleSkins()">Personnage</button>
           <span class="hint">{{ worldName() }}</span>
           @if (remotePlayers().length > 0) {
             <span class="hint">— avec {{ remotePlayers().length }} autre(s) joueur(s) connecté(s)</span>
@@ -91,6 +92,21 @@
           <div class="play-mining">
             <span>{{ miningBlockName() }}</span>
             <div class="play-mining-bar"><div class="play-mining-bar-fill" [style.width.%]="p * 100"></div></div>
+          </div>
+        }
+
+        @if (showSkins()) {
+          <div class="play-craft" (click)="$event.stopPropagation()">
+            <h4>Personnage</h4>
+            <div class="ai-pack-grid">
+              @for (skin of playerSkins; track skin) {
+                <button type="button" class="ai-pack-thumb-btn"
+                  [class.ai-pack-thumb-selected]="playerSkin() === skin"
+                  [title]="skin" (click)="changeSkin(skin)">
+                  <img [src]="skinAssetUrl(skin)" [alt]="skin" class="ai-pack-thumb" />
+                </button>
+              }
+            </div>
           </div>
         }
 
