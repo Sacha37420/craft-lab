@@ -29,8 +29,7 @@ export class AppComponent {
   protected closeMobileFn = (): void => this.closeMobile();
 
   readonly navEntries: NavEntry[] = [
-    { kind: 'link', path: '/',        label: 'Accueil', abbr: 'Ac', exact: true },
-    { kind: 'link', path: '/jouer',   label: 'Jouer',    abbr: 'Jo' },
+    { kind: 'link', path: '/jouer',   label: 'Jouer',    abbr: 'Jo', exact: true },
     { kind: 'section', label: 'Catalogue' },
     { kind: 'link', path: '/catalogue/blocks',       label: 'Blocks',              abbr: 'Bl' },
     { kind: 'link', path: '/catalogue/armes',        label: 'Armes',               abbr: 'Ar' },
@@ -43,7 +42,6 @@ export class AppComponent {
     { kind: 'link', path: '/catalogue/portails',     label: 'Portails',            abbr: 'Po' },
     { kind: 'link', path: '/catalogue/bibliotheque', label: 'Bibliothèque',        abbr: 'Bi' },
     { kind: 'section', label: 'Compte' },
-    { kind: 'link', path: '/profile', label: 'Profil',  abbr: 'Pr' },
     { kind: 'link', path: '/parametrage', label: 'Paramétrage', abbr: 'Pa' },
   ];
 

@@ -1,6 +1,4 @@
 import { Routes } from '@angular/router';
-import { HomeComponent }    from './pages/home/home.component';
-import { ProfileComponent } from './pages/profile/profile.component';
 import { BlocksComponent } from './pages/catalogue/blocks/blocks.component';
 import { WeaponsComponent } from './pages/catalogue/weapons/weapons.component';
 import { ProjectilesComponent } from './pages/catalogue/projectiles/projectiles.component';
@@ -14,8 +12,7 @@ import { BibliothequeComponent } from './pages/catalogue/bibliotheque/bibliotheq
 import { ParametrageComponent } from './pages/parametrage/parametrage.component';
 
 export const routes: Routes = [
-  { path: '',        component: HomeComponent },
-  { path: 'profile', component: ProfileComponent },
+  { path: '',        redirectTo: 'jouer', pathMatch: 'full' },
   { path: 'catalogue/blocks',        component: BlocksComponent },
   { path: 'catalogue/armes',         component: WeaponsComponent },
   { path: 'catalogue/projectiles',   component: ProjectilesComponent },
@@ -31,5 +28,5 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/play/play.component').then(m => m.PlayComponent),
   },
   { path: 'parametrage', component: ParametrageComponent },
-  { path: '**',      redirectTo: '' },
+  { path: '**',      redirectTo: 'jouer' },
 ];
