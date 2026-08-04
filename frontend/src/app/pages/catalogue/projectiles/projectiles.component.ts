@@ -51,7 +51,7 @@ export class ProjectilesComponent implements OnInit {
   }
 
   openCreate(): void {
-    this.form = { name: '', description: '', damage: 0 };
+    this.form = { name: '', description: '', damage: 0, speed: 400 };
     this.effectsText = '[]';
     this.editing.set(null);
     this.error.set(null);

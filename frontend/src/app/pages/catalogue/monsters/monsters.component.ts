@@ -2,7 +2,7 @@ import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PercentPipe } from '@angular/common';
 import {
-  ApiService, CatalogueItem, CatalogueSuggestion, Monster, MonsterDrop,
+  ApiService, CatalogueItem, CatalogueSuggestion, Monster, MonsterDrop, Projectile,
 } from '../../../core/api.service';
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
@@ -36,6 +36,7 @@ export class MonstersComponent implements OnInit {
 
   items = signal<Monster[]>([]);
   allItems = signal<CatalogueItem[]>([]);
+  projectiles = signal<Projectile[]>([]);
   loading = signal(true);
   error = signal<string | null>(null);
   showModal = signal(false);
@@ -61,12 +62,13 @@ export class MonstersComponent implements OnInit {
 
   refreshLookups(): void {
     this.api.getItems().subscribe({ next: i => this.allItems.set(i) });
+    this.api.getProjectiles().subscribe({ next: p => this.projectiles.set(p) });
   }
 
   openCreate(): void {
     this.form = {
       name: '', description: '', level: 1, hp: 10, detection_range: 10, attack_type: 'melee',
-      attack_damage: 1, attack_rate: 1, movement_patterns: [],
+      attack_damage: 1, attack_rate: 1, projectile: null, movement_patterns: [],
     };
     this.editing.set(null);
     this.drops.set([]);

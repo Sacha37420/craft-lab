@@ -6,13 +6,13 @@ import Phaser from 'phaser';
 import {
   Artifact, ApiService, Block, CatalogueCategoryPath, DepthTier, DepthTierBlockRate,
   DepthTierMonsterSpawn, GameMap, Monster, Projectile, RecipeIngredient, SpriteAsset, Tool, Weapon,
-  World, WorldGenerationRules,
+  WeaponProjectileLink, World, WorldGenerationRules,
 } from '../../core/api.service';
 import { colorForBlockId, TierRules } from '../../shared/world/terrain-generation';
 import { GameScene, InitialCharacterState, PLAYER_SKINS } from './game-scene';
 import {
   InventoryEntry, WorldBlockDef, WorldItemRef, WorldMonsterDef, WorldMonsterSpawnRate,
-  WorldRecipe, WorldToolDef, WorldWeaponDef,
+  WorldProjectileDef, WorldRecipe, WorldToolDef, WorldWeaponDef,
 } from './world-types';
 
 interface CatalogBundle {
@@ -299,10 +299,15 @@ export class PlayComponent implements OnInit, OnDestroy {
       ...catalog.tools.map(t => ({ category: 'tools' as const, id: t.id!, name: t.name })),
       ...catalog.blocks.map(b => ({ category: 'blocks' as const, id: b.id!, name: b.name })),
     ];
-    forkJoinOrEmpty(recipeTargets.map(t => this.api.getRecipe(t.category, t.id))).subscribe({
-      next: recipeLists => this.onRecipesLoaded(
+    forkJoin({
+      recipeLists: forkJoinOrEmpty(recipeTargets.map(t => this.api.getRecipe(t.category, t.id))),
+      // Lot 12 — un seul projectile simulé par arme (la première munition configurée, cf.
+      // WorldWeaponDef.projectile) : pas de sélection de munition côté joueur pour l'instant.
+      weaponProjectileLists: forkJoinOrEmpty(catalog.weapons.map(w => this.api.getWeaponProjectiles(w.id!))),
+    }).subscribe({
+      next: ({ recipeLists, weaponProjectileLists }) => this.onRecipesLoaded(
         tierRules, monsterSpawnsByTier, blockIds, monsterIds, catalog,
-        blockDropLists, monsterDropLists, recipeTargets, recipeLists, ctx,
+        blockDropLists, monsterDropLists, recipeTargets, recipeLists, weaponProjectileLists, ctx,
       ),
       error: () => { this.error.set('Erreur lors du chargement des recettes.'); this.loadingWorld.set(false); },
     });
@@ -315,6 +320,7 @@ export class PlayComponent implements OnInit, OnDestroy {
     monsterDropLists: { dropped_item: number | null; quantity: number; chance: number }[][],
     recipeTargets: { category: CatalogueCategoryPath; id: number; name: string }[],
     recipeLists: RecipeIngredient[][],
+    weaponProjectileLists: WeaponProjectileLink[][],
     ctx: LaunchContext,
   ): void {
     const blockDefs = new Map<number, WorldBlockDef>();
@@ -349,13 +355,23 @@ export class PlayComponent implements OnInit, OnDestroy {
       return asset ? this.api.spriteAssetUrl(asset) : '';
     };
 
+    // Lot 12 — résolution des projectiles (arme/monstre) en WorldProjectileDef, une fois ici comme
+    // le reste du catalogue : GameScene ne parle jamais à l'API.
+    const projectilesById = new Map(catalog.projectiles.map(p => [p.id!, p]));
+    const toProjectileDef = (p: Projectile): WorldProjectileDef => ({
+      id: p.id!, name: p.name, damage: p.damage, speed: p.speed,
+      iconUrl: p.icon_url ? this.api.iconUrl(p.icon_url) : null,
+    });
+
     const monsterDefs = new Map<number, WorldMonsterDef>();
     monsterIds.forEach((id, i) => {
       const m = catalog.monsters.find(mo => mo.id === id);
       if (!m) return;
+      const monsterProjectile = m.projectile != null ? projectilesById.get(m.projectile) : undefined;
       monsterDefs.set(id, {
         id, name: m.name, hp: m.hp, detectionRange: m.detection_range, attackType: m.attack_type,
         attackDamage: m.attack_damage, attackRate: m.attack_rate, attackRangeTiles: m.attack_range_tiles,
+        projectile: monsterProjectile ? toProjectileDef(monsterProjectile) : undefined,
         movementPatterns: m.movement_patterns, moveSpeed: m.move_speed, chaseSpeed: m.chase_speed,
         jumpStrength: m.jump_strength,
         drops: monsterDropLists[i]
@@ -382,9 +398,14 @@ export class PlayComponent implements OnInit, OnDestroy {
       });
     });
 
-    const weaponDefs: WorldWeaponDef[] = catalog.weapons.map(w => ({
-      id: w.id!, name: w.name, style: w.style, damage: w.damage, attackRange: w.attack_range, attackRate: w.attack_rate,
-    }));
+    const weaponDefs: WorldWeaponDef[] = catalog.weapons.map((w, i) => {
+      const link = weaponProjectileLists[i]?.[0];
+      const projectile = link?.projectile != null ? projectilesById.get(link.projectile) : undefined;
+      return {
+        id: w.id!, name: w.name, style: w.style, damage: w.damage, attackRange: w.attack_range, attackRate: w.attack_rate,
+        projectile: projectile ? toProjectileDef(projectile) : undefined,
+      };
+    });
 
     const recipes: WorldRecipe[] = recipeTargets
       .map((target, i) => ({ target, ingredients: recipeLists[i] ?? [] }))
@@ -571,6 +592,14 @@ export class PlayComponent implements OnInit, OnDestroy {
             msg.id!, msg['monsterId'] as string, msg['weaponId'] as number | null, msg['x'] as number, msg['y'] as number,
           );
         }
+        break;
+      case 'projectile-spawn':
+        // Rendu cosmétique uniquement (cf. GameScene.applyRemoteProjectileSpawn) — seul l'hôte qui
+        // a réellement simulé ce tir résout les dégâts, diffusés séparément (player-damage/loot).
+        this.scene?.applyRemoteProjectileSpawn(
+          msg['x'] as number, msg['y'] as number, msg['targetX'] as number, msg['targetY'] as number,
+          msg['projectileId'] as number, msg['firedBy'] as 'player' | 'monster',
+        );
         break;
       case 'loot':
         if (msg['targetId'] === this.selfId) this.scene?.applyLoot(msg['itemId'] as number, msg['quantity'] as number);

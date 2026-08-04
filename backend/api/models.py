@@ -218,6 +218,10 @@ class Projectile(models.Model):
     # {"status_effect": <code>, ...} ; structure fine à trancher à l'usage,
     # cf. ArtifactEffect.parameters pour le même choix de modélisation.
     effects = models.JSONField(default=list, blank=True)
+    # Vitesse de déplacement du projectile réellement simulé (Lot 12, px/s) — propriété du
+    # PROJECTILE lui-même (pas de l'arme/du monstre qui le tire), réutilisée aussi bien par un tir
+    # joueur (via WeaponProjectile) que par un tir monstre (via Monster.projectile).
+    speed = models.FloatField(default=400)
 
     class Meta:
         db_table = 'projectiles'
@@ -429,6 +433,15 @@ class Monster(models.Model):
     # MONSTER_ATTACK_RANGE_TILES, pour qu'un monstre existant sans valeur explicite garde le même
     # comportement qu'avant l'ajout de ce champ.
     attack_range_tiles = models.FloatField(default=1.2)
+    # Lot 12 — projectile réellement simulé qu'un monstre à distance tire (au lieu du dégât
+    # instantané par distance, simplification du Lot 6b) : vide, un monstre attack_type=ranged/
+    # magic sans projectile configuré garde l'ancien comportement (dégrade en attaque de contact
+    # classique, même philosophie que la Tourelle du Lot 11 sans ce champ). N'importe quel Item de
+    # catégorie PROJECTILE, sans lien avec les armes (WeaponProjectile) — un monstre n'équipe pas
+    # d'arme, il EST sa propre source de tir.
+    projectile = models.ForeignKey(
+        Projectile, on_delete=models.SET_NULL, null=True, blank=True, related_name='used_by_monsters',
+    )
 
     # Patterns de déplacement (au sol, vol, saut, poursuite, fuite...) — liste
     # extensible de codes libres (ex: ["ground", "chase"]), pas de table dédiée

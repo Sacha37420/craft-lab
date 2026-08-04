@@ -218,7 +218,7 @@ class ProjectileSerializer(ItemExtensionSerializer):
     class Meta:
         model = Projectile
         fields = [
-            'id', 'name', 'description', 'icon_path', 'icon_url', 'damage', 'effects',
+            'id', 'name', 'description', 'icon_path', 'icon_url', 'damage', 'effects', 'speed',
             'created_at', 'updated_at',
         ]
 
@@ -286,14 +286,16 @@ class MonsterSerializer(serializers.ModelSerializer):
     """
 
     icon_url = serializers.SerializerMethodField()
+    projectile_name = serializers.CharField(source='projectile.item.name', read_only=True, default=None)
 
     class Meta:
         model = Monster
         fields = [
             'id', 'name', 'description', 'icon_path', 'icon_url', 'level', 'hp',
             'detection_range', 'detection_condition', 'attack_type', 'attack_damage',
-            'attack_rate', 'attack_range_tiles', 'movement_patterns', 'move_speed',
-            'chase_speed', 'jump_strength', 'rig', 'created_at', 'updated_at',
+            'attack_rate', 'attack_range_tiles', 'projectile', 'projectile_name',
+            'movement_patterns', 'move_speed', 'chase_speed', 'jump_strength', 'rig',
+            'created_at', 'updated_at',
         ]
 
     def get_icon_url(self, obj) -> str | None:

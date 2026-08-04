@@ -81,6 +81,8 @@ export interface Weapon extends CatalogueEntityBase {
 export interface Projectile extends CatalogueEntityBase {
   damage: number;
   effects: unknown[];
+  /** px/s — Lot 12, réutilisé aussi bien par un tir joueur (WeaponProjectile) qu'un tir monstre (Monster.projectile). */
+  speed: number;
 }
 
 export type Artifact = CatalogueEntityBase;
@@ -214,6 +216,10 @@ export interface Monster extends CatalogueEntityBase {
   attack_damage: number;
   attack_rate: number;
   attack_range_tiles: number;
+  /** Lot 12 — projectile réellement simulé qu'un monstre à distance tire ; null = ancien
+   * comportement (dégât instantané par distance, dégrade en attaque de contact). */
+  projectile: number | null;
+  projectile_name?: string | null;
   movement_patterns: string[];
   move_speed: number;
   chase_speed: number;

@@ -4,7 +4,7 @@ import {
 } from '../../shared/world/terrain-generation';
 import {
   InventoryEntry, WorldBlockDef, WorldItemRef, WorldMonsterDef, WorldMonsterSpawnRate,
-  WorldRecipe, WorldToolDef, WorldWeaponDef,
+  WorldProjectileDef, WorldRecipe, WorldToolDef, WorldWeaponDef,
 } from './world-types';
 
 export const TILE_SIZE = 32;
@@ -41,6 +41,11 @@ const BARE_HANDS_RATE = 1;
 /** Lot 8b — cadence de diffusion de l'état des monstres par l'hôte (position/PV), pas à chaque
  * frame : suffisant pour un mouvement lisse côté clients non-hôtes sans saturer le relais. */
 const MONSTER_BROADCAST_INTERVAL_MS = 200;
+/** Lot 12 — projectile réellement simulé. Durée de vie max (filet de sécurité si rien n'est jamais
+ * touché — tir vers le vide, cible qui s'est déplacée hors de portée...) et rayon du repli visuel
+ * (rond de couleur) quand aucune icône n'est configurée sur le Projectile catalogue. */
+const PROJECTILE_TTL_MS = 3000;
+const PROJECTILE_FALLBACK_RADIUS = 5;
 
 /** Les 5 skins complets du pack Kenney "Platformer Characters" (assets/sprite-library/characters/)
  * — mêmes 5 poses pour chacun (idle/walk1/walk2/jump/fall), cf. LICENSE.txt à cet endroit. */
@@ -51,6 +56,8 @@ const blockIconKey = (id: number): string => `block-icon-${id}`;
 /** Clé de texture stable pour une pièce de montage de monstre — dérivée de l'id SpriteAsset (Lot 10 ;
  * deux monstres référençant le même asset partagent la même texture, jamais rechargée deux fois). */
 const rigPartKey = (assetId: number): string => `rig-part-${assetId}`;
+/** Clé de texture stable pour un projectile (Lot 12) — dérivée de l'id catalogue (Projectile). */
+const projectileTextureKey = (projectileId: number): string => `projectile-${projectileId}`;
 /** Anti-retrigger pour une pièce collidesTerrain (une arme réutilise plutôt le cooldown d'attaque
  * du monstre, def.attackRate) — un contact immobile contre un mur ne doit déclencher la compétence
  * 'block-hit' qu'une fois toutes les ~500ms, pas à 60 im/s tant qu'il persiste. */
@@ -189,6 +196,26 @@ interface LiveMonster {
 }
 
 /**
+ * Projectile réellement simulé (Lot 12) — sprite physique simple, vitesse/direction fixées une
+ * fois au tir, jamais recalculées ensuite (pas de tracking de cible en vol, même un tir "magique").
+ * Simulé UNIQUEMENT côté hôte (comme tout ce qui résout des dégâts, cf. docstring de la classe) :
+ * un projectile reçu par `applyRemoteProjectileSpawn` chez un non-hôte est purement cosmétique
+ * (aucune détection de contact/dégât n'est jamais faite localement pour lui), cf. tickProjectiles.
+ */
+interface LiveProjectile {
+  sprite: Phaser.GameObjects.Image | Phaser.GameObjects.Arc;
+  vx: number;
+  vy: number;
+  damage: number;
+  /** 'player' : cible les monstres (this.liveMonsters). 'monster' : cible le(s) joueur(s)
+   * (self + remotePlayerPositions), même liste de candidats que tickRigCollisions. */
+  firedBy: 'player' | 'monster';
+  /** Crédite le butin en cas de kill — pertinent seulement pour firedBy==='player'. */
+  looterId: 'self' | string;
+  spawnedAtMs: number;
+}
+
+/**
  * Simulation + rendu du monde jouable (Lots 6a/6b/7/8). Ne parle jamais
  * directement à l'API ni au WebSocket — reçoit tout ce dont elle a besoin en
  * config depuis PlayComponent et communique vers l'extérieur uniquement par
@@ -266,6 +293,13 @@ export class GameScene extends Phaser.Scene {
   private spawnTickAccum = 0;
   private sortedTierDepthIndices: number[] = [];
 
+  // Lot 12 — projectiles réellement simulés.
+  private flyingProjectiles: LiveProjectile[] = [];
+  /** id catalogue (Projectile) -> définition résolue — peuplé une fois en preload() à partir de
+   * tous les projectiles configurés (armes + monstres), pour que applyRemoteProjectileSpawn (non-
+   * hôte, ne connaît que l'id reçu du réseau) puisse retrouver icône/dégâts/vitesse sans l'API. */
+  private projectilesById = new Map<number, WorldProjectileDef>();
+
   constructor(config: GameSceneConfig) {
     super('game');
     this.cfg = config;
@@ -312,6 +346,20 @@ export class GameScene extends Phaser.Scene {
           }
         }
       }
+    }
+
+    // Lot 12 — projectiles configurés sur une arme et/ou un monstre ; projectilesById peuplé ici
+    // (pas seulement les icônes) pour qu'applyRemoteProjectileSpawn (non-hôte) retrouve la
+    // définition complète à partir du seul id reçu du réseau.
+    for (const weapon of this.cfg.weapons) {
+      if (!weapon.projectile) continue;
+      this.projectilesById.set(weapon.projectile.id, weapon.projectile);
+      if (weapon.projectile.iconUrl) this.load.image(projectileTextureKey(weapon.projectile.id), weapon.projectile.iconUrl);
+    }
+    for (const def of this.cfg.monsters.values()) {
+      if (!def.projectile) continue;
+      this.projectilesById.set(def.projectile.id, def.projectile);
+      if (def.projectile.iconUrl) this.load.image(projectileTextureKey(def.projectile.id), def.projectile.iconUrl);
     }
   }
 
@@ -421,6 +469,7 @@ export class GameScene extends Phaser.Scene {
     this.tickRigCollisions(delta);
     this.tickMonsterBroadcast(delta);
     this.tickRigPlayback();
+    this.tickProjectiles(delta);
   }
 
   /** Appelé depuis PlayComponent quand l'utilisateur sélectionne (ou désélectionne) un block de l'inventaire à poser. */
@@ -835,6 +884,27 @@ export class GameScene extends Phaser.Scene {
       ?? (weapon.style === 'melee' || weapon.style === 'summon' ? DEFAULT_MELEE_RANGE_TILES : DEFAULT_RANGED_RANGE_TILES);
   }
 
+  /**
+   * Point UNIQUE de résolution "un coup part" contre un monstre, portée/cooldown déjà validés par
+   * l'appelant — factorisé entre tryAttack (hôte) et resolveAttackRequest (hôte, pour le compte
+   * d'un non-hôte) qui doivent appliquer exactement la même règle projectile/contact (Lot 12).
+   * Sans projectile configuré sur l'arme : dégât instantané inchangé (comportement d'avant ce lot).
+   */
+  private landHitOnMonster(
+    monster: LiveMonster, weapon: WorldWeaponDef | undefined, damage: number,
+    looterId: 'self' | string, originX: number, originY: number,
+  ): void {
+    if (weapon?.projectile) {
+      this.spawnProjectile(originX, originY, monster.sprite.x, monster.sprite.y, weapon.projectile, damage, 'player', looterId);
+      this.cfg.onNetworkSend?.({
+        type: 'projectile-spawn', x: originX, y: originY, targetX: monster.sprite.x, targetY: monster.sprite.y,
+        projectileId: weapon.projectile.id, firedBy: 'player',
+      });
+    } else {
+      this.damageMonster(monster, damage, looterId);
+    }
+  }
+
   private tryAttack(monster: LiveMonster): void {
     const weapon = this.equippedWeaponId != null ? this.cfg.weapons.find(w => w.id === this.equippedWeaponId) : undefined;
     if (this.distanceTilesTo(monster.sprite.x, monster.sprite.y) > this.weaponRange(weapon)) {
@@ -849,11 +919,12 @@ export class GameScene extends Phaser.Scene {
 
     if (this.isHost) {
       // Résolu directement : l'hôte est déjà autoritaire sur ses propres monstres.
-      this.damageMonster(monster, damage, 'self');
+      this.landHitOnMonster(monster, weapon, damage, 'self', this.player.x, this.player.y);
     } else {
       // Un non-hôte ne peut pas trancher lui-même (il ne connaît les PV du monstre que par les
-      // diffusions de l'hôte, potentiellement en retard) — il demande, l'hôte résout et diffuse
-      // le résultat (dégâts affichés, mort, butin) à tout le salon.
+      // diffusions de l'hôte, potentiellement en retard) — il demande, l'hôte résout (et, avec un
+      // projectile configuré, diffuse le vol simulé à tout le salon, cf. landHitOnMonster) et
+      // diffuse le résultat (dégâts affichés, mort, butin) à tout le salon.
       this.cfg.onNetworkSend?.({
         type: 'attack-request', monsterId: monster.networkId, weaponId: this.equippedWeaponId,
         x: this.player.x, y: this.player.y,
@@ -874,7 +945,7 @@ export class GameScene extends Phaser.Scene {
 
     const rate = weapon?.attackRate || BARE_HANDS_RATE;
     this.remoteAttackCooldowns.set(attackerId, 1000 / Math.max(rate, 0.1));
-    this.damageMonster(monster, weapon?.damage ?? BARE_HANDS_DAMAGE, attackerId);
+    this.landHitOnMonster(monster, weapon, weapon?.damage ?? BARE_HANDS_DAMAGE, attackerId, attackerX, attackerY);
   }
 
   /** `looterId`: 'self' = crédite l'inventaire local directement (l'hôte s'attaque lui-même) ;
@@ -928,6 +999,84 @@ export class GameScene extends Phaser.Scene {
   private showFloatingText(x: number, y: number, text: string, color: string): void {
     const t = this.add.text(x, y - TILE_SIZE, text, { fontSize: '16px', color, fontStyle: 'bold' }).setOrigin(0.5);
     this.tweens.add({ targets: t, y: y - TILE_SIZE * 2, alpha: 0, duration: 600, onComplete: () => t.destroy() });
+  }
+
+  // ── Projectiles réellement simulés (Lot 12) ────────────────────────────────
+
+  /**
+   * Fait naître un projectile visuel + (si cette instance EST l'hôte) sa simulation réelle —
+   * direction/vitesse fixées une fois ici, jamais recalculées ensuite. Toujours appelé côté hôte
+   * pour un vrai tir (joueur ou monstre) ; `applyRemoteProjectileSpawn` est le SEUL autre appelant,
+   * pour la copie cosmétique côté non-hôte (cf. docstring LiveProjectile).
+   */
+  private spawnProjectile(
+    x: number, y: number, targetX: number, targetY: number, projectile: WorldProjectileDef,
+    damage: number, firedBy: 'player' | 'monster', looterId: 'self' | string,
+  ): void {
+    const angle = Math.atan2(targetY - y, targetX - x);
+    const textureKey = projectileTextureKey(projectile.id);
+    const sprite = this.textures.exists(textureKey)
+      ? this.add.image(x, y, textureKey)
+      : this.add.circle(x, y, PROJECTILE_FALLBACK_RADIUS, firedBy === 'player' ? 0xffe066 : 0xff6b6b);
+    sprite.setRotation(angle);
+    this.flyingProjectiles.push({
+      sprite, vx: Math.cos(angle) * projectile.speed, vy: Math.sin(angle) * projectile.speed,
+      damage, firedBy, looterId, spawnedAtMs: this.time.now,
+    });
+  }
+
+  /** Réception réseau (non-hôte uniquement) — rendu cosmétique pur, cf. docstring LiveProjectile :
+   * aucune détection de contact/dégât n'est jamais faite pour cette copie (tickProjectiles gate
+   * toute la résolution derrière `this.isHost`). Un id de projectile inconnu (jamais préchargé,
+   * ne devrait pas arriver) est simplement ignoré. */
+  applyRemoteProjectileSpawn(x: number, y: number, targetX: number, targetY: number, projectileId: number, firedBy: 'player' | 'monster'): void {
+    const projectile = this.projectilesById.get(projectileId);
+    if (!projectile) return;
+    this.spawnProjectile(x, y, targetX, targetY, projectile, 0, firedBy, 'self');
+  }
+
+  private destroyProjectile(index: number): void {
+    this.flyingProjectiles[index].sprite.destroy();
+    this.flyingProjectiles.splice(index, 1);
+  }
+
+  private tickProjectiles(delta: number): void {
+    const dtSec = delta / 1000;
+    for (let i = this.flyingProjectiles.length - 1; i >= 0; i--) {
+      const p = this.flyingProjectiles[i];
+      p.sprite.x += p.vx * dtSec;
+      p.sprite.y += p.vy * dtSec;
+
+      if (this.time.now - p.spawnedAtMs > PROJECTILE_TTL_MS) { this.destroyProjectile(i); continue; }
+
+      // Résolution des contacts (dégâts/destruction) — hôte uniquement, comme tout ce qui simule
+      // réellement le combat (cf. docstring de la classe) : une copie cosmétique côté non-hôte vole
+      // simplement jusqu'à expiration (PROJECTILE_TTL_MS), jamais de dégât résolu localement.
+      if (!this.isHost) continue;
+
+      const tx = Math.floor(p.sprite.x / TILE_SIZE);
+      const ty = Math.floor(p.sprite.y / TILE_SIZE);
+      if (this.isSolidCollidableAt(tx, ty)) { this.destroyProjectile(i); continue; }
+
+      if (p.firedBy === 'player') {
+        const hit = this.liveMonsters.find(m => m.sprite.getBounds().contains(p.sprite.x, p.sprite.y));
+        if (hit) { this.damageMonster(hit, p.damage, p.looterId); this.destroyProjectile(i); }
+      } else {
+        const candidates: { id: 'self' | string; x: number; y: number }[] = [
+          { id: 'self', x: this.player.x, y: this.player.y },
+          ...[...this.remotePlayerPositions.entries()].map(([id, pos]) => ({ id, ...pos })),
+        ];
+        const hit = candidates.find(c => Phaser.Geom.Rectangle.Overlaps(
+          new Phaser.Geom.Rectangle(p.sprite.x - 4, p.sprite.y - 4, 8, 8),
+          new Phaser.Geom.Rectangle(c.x - 11, c.y - 38, 22, 38),
+        ));
+        if (hit) {
+          if (hit.id === 'self') this.damagePlayer(p.damage);
+          else this.cfg.onNetworkSend?.({ type: 'player-damage', targetId: hit.id, damage: p.damage });
+          this.destroyProjectile(i);
+        }
+      }
+    }
   }
 
   // ── Écoulement des liquides ────────────────────────────────────────────
@@ -1442,8 +1591,22 @@ export class GameScene extends Phaser.Scene {
         m.attackCooldownMs -= delta;
         if (m.attackCooldownMs <= 0) {
           m.attackCooldownMs = 1000 / Math.max(m.def.attackRate, 0.1);
-          if (nearest.id === 'self') this.damagePlayer(m.def.attackDamage);
-          else this.cfg.onNetworkSend?.({ type: 'player-damage', targetId: nearest.id, damage: m.def.attackDamage });
+          if (m.def.projectile) {
+            // Lot 12 — "un monstre lanceur déclenche un tir au lieu d'un contact direct" : la
+            // compétence 'attack' du montage (si définie, ex. la Tourelle du Lot 11) se joue en
+            // plus, exactement comme tickRigCollisions le fait déjà pour un contact réel.
+            this.spawnProjectile(m.sprite.x, m.sprite.y, nearest.x, nearest.y, m.def.projectile, m.def.attackDamage, 'monster', 'self');
+            this.cfg.onNetworkSend?.({
+              type: 'projectile-spawn', x: m.sprite.x, y: m.sprite.y, targetX: nearest.x, targetY: nearest.y,
+              projectileId: m.def.projectile.id, firedBy: 'monster',
+            });
+            const skill = m.skills?.find(s => s.type === 'attack');
+            if (skill) this.startSkillPlayback(m, skill, false);
+          } else if (nearest.id === 'self') {
+            this.damagePlayer(m.def.attackDamage);
+          } else {
+            this.cfg.onNetworkSend?.({ type: 'player-damage', targetId: nearest.id, damage: m.def.attackDamage });
+          }
         }
       }
     }

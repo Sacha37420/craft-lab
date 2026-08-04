@@ -99,6 +99,17 @@ export interface WorldRigSkill {
   steps: WorldRigSkillStep[];
 }
 
+/** Projectile réellement simulé (Lot 12) — propriété du Projectile catalogue lui-même (icône +
+ * vitesse), résolu une fois par PlayComponent, réutilisé aussi bien par un tir joueur
+ * (WorldWeaponDef.projectile) que par un tir monstre (WorldMonsterDef.projectile). */
+export interface WorldProjectileDef {
+  id: number;
+  name: string;
+  damage: number;
+  speed: number;
+  iconUrl: string | null;
+}
+
 export interface WorldMonsterDef {
   id: number;
   name: string;
@@ -108,6 +119,8 @@ export interface WorldMonsterDef {
   attackDamage: number;
   attackRate: number;
   attackRangeTiles: number;
+  /** Absent = ancien comportement (dégât instantané par distance), cf. WorldProjectileDef. */
+  projectile?: WorldProjectileDef;
   movementPatterns: string[];
   moveSpeed: number;
   chaseSpeed: number;
@@ -133,6 +146,11 @@ export interface WorldWeaponDef {
   damage: number;
   attackRange: number | null;
   attackRate: number | null;
+  /** Absent = ancien comportement (dégât instantané dès que la cible est à portée). Premier
+   * WeaponProjectile configuré pour cette arme (une arme peut viser plusieurs munitions
+   * différentes via WeaponProjectile — Lot 12 ne simule que la première, pas de sélection de
+   * munition côté joueur pour l'instant). */
+  projectile?: WorldProjectileDef;
 }
 
 export interface WorldRecipeIngredient {

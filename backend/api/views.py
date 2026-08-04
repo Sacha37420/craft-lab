@@ -433,7 +433,7 @@ class MonsterViewSet(viewsets.ModelViewSet):
     catalogue.
     """
 
-    queryset = Monster.objects.all().prefetch_related('skills', 'drops__dropped_item')
+    queryset = Monster.objects.all().select_related('projectile__item').prefetch_related('skills', 'drops__dropped_item')
     serializer_class = MonsterSerializer
 
     def perform_destroy(self, instance):

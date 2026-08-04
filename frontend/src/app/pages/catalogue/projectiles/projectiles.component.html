@@ -18,6 +18,7 @@
               <strong>{{ item.name }}</strong>
             </div>
             <span class="badge badge-orange">{{ item.damage }} dégâts</span>
+            <span class="badge badge-grey">{{ item.speed }} px/s</span>
           </div>
           <p class="catalogue-card-desc">{{ item.description || '—' }}</p>
           <div class="catalogue-card-actions">
@@ -53,6 +54,11 @@
         <div class="form-group">
           <label>Dégâts *</label>
           <input type="number" step="0.1" min="0" [(ngModel)]="form.damage" name="damage" required />
+        </div>
+        <div class="form-group">
+          <label>Vitesse (px/s) *</label>
+          <input type="number" step="10" min="1" [(ngModel)]="form.speed" name="speed" required />
+          <p class="hint">Vitesse de déplacement une fois réellement simulé en jeu (Lot 12).</p>
         </div>
         <div class="form-group">
           <label>Effets complémentaires (JSON)</label>
