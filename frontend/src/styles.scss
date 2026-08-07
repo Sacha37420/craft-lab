@@ -125,6 +125,10 @@ code, pre, .mono { font-family: var(--font-mono); }
   max-width: 1200px;
 }
 
+@media (max-width: 899px) {
+  .page { padding: var(--space-4); }
+}
+
 .page-header {
   display: flex;
   align-items: center;
