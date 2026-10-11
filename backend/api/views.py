@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import catalogue_ai
-from .ai_client import AIError, AINotConfigured
+from .ai_client import TEXT_PROVIDERS, AIError, AINotConfigured
 from .image_client import IMAGE_PROVIDERS, generate_image
 from .storage_client import StorageClientError, upload_bytes
 from .models import (
@@ -193,6 +193,12 @@ class CatalogueAssistantView(APIView):
             raise NotFound(f"Catégorie inconnue : '{category}'.")
         if provider not in _VALID_PROVIDERS:
             raise NotFound(f"Fournisseur inconnu : '{provider}'.")
+        if provider not in TEXT_PROVIDERS:
+            # Fournisseur d'images seulement : sans ce refus, KeyError (500).
+            raise ValidationError(
+                {'provider': f"'{provider}' ne génère que des images — choisissez "
+                             f"{' ou '.join(sorted(TEXT_PROVIDERS))} pour une suggestion de texte."},
+            )
 
         try:
             result = catalogue_ai.suggest(request.user.email, provider, category, partial)

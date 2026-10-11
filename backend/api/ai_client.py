@@ -125,6 +125,9 @@ def _call_mistral(api_key, model, system, message, schema, history):
 
 
 _CALLERS = {'claude': _call_claude, 'mistral': _call_mistral}
+# Les fournisseurs qui savent répondre en texte — `gemini` et `openai` sont des
+# fournisseurs valides (images, cf. image_client.IMAGE_PROVIDERS) mais pas ici.
+TEXT_PROVIDERS = frozenset(_CALLERS)
 
 
 def complete_json(owner_email, provider, system, message, schema, history=None):

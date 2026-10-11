@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import base64
 import json
-import unittest
 
 import requests
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -349,14 +348,16 @@ class AssistantsTests(CraftTestCase):
         self.assertEqual(self.suggerer().status_code, 502)
         self.assertEqual(len(self.appels), 3)     # un essai et deux reprises, pas davantage
 
-    @unittest.expectedFailure
     def test_fournisseur_d_images_demande_en_texte(self):
-        """DÉFAUT — `gemini` et `openai` sont des fournisseurs valides (images)
-        mais n'ont pas d'appel texte : avec une clé enregistrée, l'assistant de
-        catalogue finit en KeyError, HTTP 500, au lieu d'un refus lisible."""
+        """`gemini` et `openai` sont des fournisseurs valides, mais d'images
+        seulement : refus lisible (400), avec ou sans clé, au lieu d'un KeyError."""
         cle('alice', 'gemini', 'cle-gemini')
-        resp = self.suggerer(provider='gemini')
-        self.assertLess(resp.status_code, 500)
+        for provider in ('gemini', 'openai'):
+            with self.subTest(provider=provider):
+                resp = self.suggerer(provider=provider)
+                self.assertEqual(resp.status_code, 400)
+                self.assertIn('provider', resp.json())
+        self.assertEqual(self.appels, [])
 
     # ── Assistant image ───────────────────────────────────────────────────────
     def generer(self, tok=None, **data):
