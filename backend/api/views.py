@@ -1,5 +1,6 @@
 import base64
 import binascii
+import hmac
 import mimetypes
 import uuid
 
@@ -932,7 +933,10 @@ class VerifyRelayTicketView(APIView):
 
     def post(self, request):
         key = request.headers.get('X-Relay-Key', '')
-        if not settings.RELAY_INTERNAL_KEY or key != settings.RELAY_INTERNAL_KEY:
+        # Comparaison en temps constant (sur des octets : `compare_digest`
+        # refuse une chaîne non ASCII).
+        expected = settings.RELAY_INTERNAL_KEY
+        if not expected or not hmac.compare_digest(key.encode(), expected.encode()):
             return Response({'detail': 'Clé invalide.'}, status=status.HTTP_403_FORBIDDEN)
 
         token = (request.data.get('token') or '').strip()

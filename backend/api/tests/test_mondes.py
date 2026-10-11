@@ -6,7 +6,9 @@ monde, et le ticket qui l'attache à une connexion du relais.
 """
 from __future__ import annotations
 
+import hmac
 from datetime import timedelta
+from unittest import mock
 
 from django.test import override_settings
 from django.utils import timezone
@@ -269,6 +271,7 @@ class TicketsDeRelaisTests(CraftTestCase):
             'prefixe': dict(cle=CLE_RELAIS[:-1]),
             'suffixe': dict(cle=CLE_RELAIS + 'x'),
             'casse': dict(cle=CLE_RELAIS.upper()),
+            'non_ascii': dict(cle='clé-é'),
             'jeton_a_la_place': dict(cle=None, HTTP_AUTHORIZATION=f'Bearer {self.alice}'),
         }
         for nom, kwargs in essais.items():
@@ -279,6 +282,13 @@ class TicketsDeRelaisTests(CraftTestCase):
         # Les refus n'ont pas consommé le ticket.
         self.assertIsNone(RelayTicket.objects.get().consumed_at)
         self.assertEqual(self.verifier(ticket).status_code, 200)
+
+    def test_la_cle_est_comparee_en_temps_constant(self):
+        ticket = self.emettre()
+        with mock.patch('api.views.hmac.compare_digest', wraps=hmac.compare_digest) as compare:
+            self.assertEqual(self.verifier(ticket, 'mauvaise-cle').status_code, 403)
+            self.assertEqual(self.verifier(ticket).status_code, 200)
+        self.assertEqual(compare.call_count, 2)
 
     def test_cle_non_configuree_ferme_l_endpoint(self):
         """Échec fermé : une clé vide côté serveur ne vaut pas « pas de clé »."""
