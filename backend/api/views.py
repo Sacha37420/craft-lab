@@ -838,6 +838,18 @@ class WorldViewSet(viewsets.ModelViewSet):
         world = self.get_object()
         diff_updates = request.data.get('block_diff')
         char_data = request.data.get('character')
+        # `block_diff` : objet {"x,y": id de block ou null} (cf. World). Tout autre
+        # forme est refusée ici — `dict.update` levait, donc erreur 500.
+        if diff_updates is not None and (
+            not isinstance(diff_updates, dict)
+            or any(
+                value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)))
+                for value in diff_updates.values()
+            )
+        ):
+            raise ValidationError(
+                {'block_diff': 'Doit être un objet {"x,y": identifiant de block ou null}.'},
+            )
         # Une seule transaction : un personnage refusé (400) ne doit pas laisser
         # le terrain déjà modifié derrière lui — c'est tout l'objet de cet appel.
         with transaction.atomic():

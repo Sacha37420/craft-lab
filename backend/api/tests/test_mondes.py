@@ -6,7 +6,6 @@ monde, et le ticket qui l'attache à une connexion du relais.
 """
 from __future__ import annotations
 
-import unittest
 from datetime import timedelta
 
 from django.test import override_settings
@@ -184,15 +183,23 @@ class SauvegardeTests(CraftTestCase):
         self.assertEqual(self.monde.block_diff, {'0,0': 1, '5,5': 2, '9,9': 7})
         self.assertEqual(Character.objects.get().hp, 12)
 
-    @unittest.expectedFailure
     def test_diff_mal_forme_refuse_proprement(self):
-        """DÉFAUT — un `block_diff` qui n'est pas un objet (liste, chaîne) n'est
-        pas validé : `dict.update` lève et la requête finit en erreur 500."""
-        for diff in (['0,0', 1], 'tout', 3):
+        """Un `block_diff` qui n'est pas un objet {"x,y": id de block ou null}
+        est refusé (400), sans rien écrire — personnage compris."""
+        for diff in (['0,0', 1], 'tout', 3, True, {'1,1': 'pierre'}, {'1,1': [3]},
+                     {'1,1': {'id': 3}}, {'1,1': True}):
             with self.subTest(diff=diff):
-                resp = self.call('post', self.url, self.alice, {'block_diff': diff},
-                                 tolere_500=True)
+                resp = self.call('post', self.url, self.alice,
+                                 {'block_diff': diff, 'character': {'hp': 5}}, tolere_500=True)
                 self.assertEqual(resp.status_code, 400)
+                self.assertIn('block_diff', resp.json())
+        self.monde.refresh_from_db()
+        self.assertEqual(self.monde.block_diff, {'0,0': 1, '5,5': 2})
+        self.assertEqual(Character.objects.count(), 0)
+        # Diff vide ou absent : toujours accepté.
+        for diff in ({}, None):
+            with self.subTest(diff=diff):
+                self.assertEqual(self.call('post', self.url, self.alice, {'block_diff': diff}).status_code, 200)
 
 
 class TicketsDeRelaisTests(CraftTestCase):
