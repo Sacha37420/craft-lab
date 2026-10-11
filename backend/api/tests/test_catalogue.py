@@ -8,8 +8,6 @@ ne s'atteint que par son parent.
 """
 from __future__ import annotations
 
-import unittest
-
 from api.models import (
     ArtifactEffect, Artifact, Block, BlockDrop, DepthTier, DepthTierBlockRate,
     DepthTierMonsterSpawn, Item, Monster, MonsterDrop, MonsterSkill, Projectile,
@@ -354,12 +352,25 @@ class GabaritsTests(CraftTestCase):
                 self.assertEqual(self.call(method, path, self.alice, {'name': 'x'}).status_code, 405)
         self.assertEqual(RigTemplate.objects.get(pk=self.bipede.pk).name, 'Bipède de test')
 
-    # ── Défaut constaté (I4 : code de production inchangé) ────────────────────
-    @unittest.expectedFailure
-    def test_nombre_de_segments_non_numerique_refuse_proprement(self):
-        """DÉFAUT — `segment_count` passe par `int()` sans garde : une valeur
-        non numérique finit en erreur 500. (Et aucune borne haute : un entier
-        énorme fait construire autant de pièces en mémoire.)"""
-        resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5},
-                              segment_count='beaucoup')
-        self.assertEqual(resp.status_code, 400)
+    # ── Défaut corrigé (dérogation de l'architecte à I4) ──────────────────────
+    def test_nombre_de_segments_non_numerique_ou_demesure_refuse(self):
+        """`segment_count` : entier, borné à ce que l'interface permet (20).
+        Refusé (400) sans toucher au rig, au lieu d'une erreur 500 ou d'une
+        construction de pièces sans limite."""
+        for valeur in ('beaucoup', '3.5', [3], {'n': 3}, True, 21, '21', 10**9):
+            with self.subTest(segment_count=valeur):
+                resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5},
+                                      segment_count=valeur)
+                self.assertEqual(resp.status_code, 400)
+                self.assertIn('segment_count', resp.json())
+        self.assertEqual(Monster.objects.get().rig, {'parts': [{'id': 'ancien'}], 'skills': []})
+        # Les bornes de l'interface passent, y compris en chaîne.
+        for valeur, attendu in ((20, 20), ('2', 2), (2.0, 2)):
+            with self.subTest(segment_count=valeur):
+                resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5},
+                                      segment_count=valeur)
+                self.assertEqual(resp.status_code, 200, resp.content)
+                self.assertEqual(len(Monster.objects.get().rig['parts']), attendu)
+        # Sans slot répétable, la valeur est ignorée comme avant.
+        resp = self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': 1}, segment_count=3)
+        self.assertEqual(resp.status_code, 200)

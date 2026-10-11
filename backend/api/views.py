@@ -80,6 +80,10 @@ from .serializers import (
 
 _VALID_PROVIDERS = {key for key, _ in PROVIDER_CHOICES}
 
+# Borne haute de `segment_count` (apply-template) : celle du champ « Nombre de
+# segments » de l'interface (monster-builder.component.html, max="20").
+MAX_RIG_SEGMENTS = 20
+
 
 def _save_child(serializer, **parent):
     """Enregistre une ligne de sous-liste soumise à une contrainte d'unicité
@@ -560,6 +564,22 @@ class MonsterViewSet(viewsets.ModelViewSet):
             template = RigTemplate.objects.get(pk=template_id)
         except (RigTemplate.DoesNotExist, ValueError, TypeError):
             raise NotFound(f"Gabarit inconnu : '{template_id}'.")
+
+        # Validé avant toute construction : `int()` sans garde finissait en
+        # erreur 500, et sans borne haute un entier énorme faisait construire
+        # autant de pièces en mémoire. En dessous de 1, le plancher historique
+        # (max(1, …) plus bas) est conservé.
+        if segment_count not in (None, ''):
+            if isinstance(segment_count, bool):
+                raise ValidationError({'segment_count': 'Doit être un nombre entier.'})
+            try:
+                segment_count = int(segment_count)
+            except (TypeError, ValueError):
+                raise ValidationError({'segment_count': 'Doit être un nombre entier.'})
+            if segment_count > MAX_RIG_SEGMENTS:
+                raise ValidationError(
+                    {'segment_count': f'Au plus {MAX_RIG_SEGMENTS} segments.'},
+                )
 
         parts = []
         # slot_key -> partId (slot simple) ou slot_key -> [partId, ...] (slot repeatable, un id par segment).
