@@ -4,7 +4,7 @@ import mimetypes
 import uuid
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, viewsets
@@ -79,6 +79,20 @@ from .serializers import (
 )
 
 _VALID_PROVIDERS = {key for key, _ in PROVIDER_CHOICES}
+
+
+def _save_child(serializer, **parent):
+    """Enregistre une ligne de sous-liste soumise à une contrainte d'unicité
+    avec son parent (un ingrédient par recette, un projectile par arme, un block
+    ou un monstre par palier). Le parent n'est pas un champ du sérialiseur, donc
+    DRF ne voit pas la contrainte : un doublon n'était arrêté que par la base
+    (IntegrityError, erreur 500). Le point de sauvegarde garde la transaction
+    en cours utilisable."""
+    try:
+        with transaction.atomic():
+            serializer.save(**parent)
+    except IntegrityError as exc:
+        raise ValidationError('Cette ligne figure déjà dans la liste.') from exc
 
 
 class MeView(APIView):
@@ -293,7 +307,7 @@ class ItemCategoryViewSetMixin:
             return Response(RecipeIngredientSerializer(qs, many=True).data)
         serializer = RecipeIngredientSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(item=item)
+        _save_child(serializer, item=item)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['delete'], url_path=r'recipe/(?P<ingredient_id>\d+)')
@@ -354,7 +368,7 @@ class WeaponViewSet(ItemCategoryViewSetMixin, viewsets.ModelViewSet):
             return Response(WeaponProjectileSerializer(qs, many=True).data)
         serializer = WeaponProjectileSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(weapon=weapon)
+        _save_child(serializer, weapon=weapon)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['delete'], url_path=r'projectiles/(?P<link_id>\d+)')
@@ -649,7 +663,7 @@ class DepthTierViewSet(viewsets.ModelViewSet):
             return Response(DepthTierBlockRateSerializer(qs, many=True).data)
         serializer = DepthTierBlockRateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(depth_tier=tier)
+        _save_child(serializer, depth_tier=tier)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['delete'], url_path=r'block-rates/(?P<rate_id>\d+)')
@@ -667,7 +681,7 @@ class DepthTierViewSet(viewsets.ModelViewSet):
             return Response(DepthTierMonsterSpawnSerializer(qs, many=True).data)
         serializer = DepthTierMonsterSpawnSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(depth_tier=tier)
+        _save_child(serializer, depth_tier=tier)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['delete'], url_path=r'monster-spawns/(?P<spawn_id>\d+)')

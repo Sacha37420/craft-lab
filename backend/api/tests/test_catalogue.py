@@ -219,19 +219,35 @@ class SousListesTests(CraftTestCase):
         self.assertEqual((DepthTier.objects.count(), DepthTierBlockRate.objects.count()), (0, 0))
         self.assertTrue(Block.objects.filter(pk=self.pierre.pk).exists())
 
-    # ── Défaut constaté (I4 : code de production inchangé) ────────────────────
-    @unittest.expectedFailure
+    # ── Défaut corrigé (dérogation de l'architecte à I4) ──────────────────────
     def test_doublon_dans_une_sous_liste_refuse_proprement(self):
-        """DÉFAUT — les contraintes d'unicité des sous-listes (un ingrédient par
-        recette, un projectile par arme, un block ou un monstre par palier) ne
-        sont vues que par la base : le parent n'est pas un champ du sérialiseur,
-        donc DRF ne les valide pas. Un doublon finit en IntegrityError, HTTP 500
-        au lieu d'un 400."""
-        url = f'/api/weapons/{self.epee.pk}/recipe/'
-        data = {'ingredient': self.pierre.pk, 'quantity': 1}
-        self.assertEqual(self.call('post', url, self.alice, data).status_code, 201)
-        resp = self.call('post', url, self.alice, data, tolere_500=True)
-        self.assertEqual(resp.status_code, 400)
+        """Un ingrédient par recette, un projectile par arme, un block et un
+        monstre par palier : le doublon est refusé (400), pas laissé à la base
+        (IntegrityError, erreur 500). La requête suivante passe normalement."""
+        palier = DepthTier.objects.create(game_map=make_map(), depth_index=0)
+        gobelin = make_monster()
+        fleche = Projectile.objects.create(
+            item=Item.objects.create(name='Flèche', category='projectile'))
+        cas = [
+            (f'/api/weapons/{self.epee.pk}/recipe/', {'ingredient': self.pierre.pk, 'quantity': 1},
+             RecipeIngredient),
+            (f'/api/weapons/{self.epee.pk}/projectiles/', {'projectile': fleche.pk}, WeaponProjectile),
+            (f'/api/depth-tiers/{palier.pk}/block-rates/', {'block': self.pierre.pk, 'rate': 0.5},
+             DepthTierBlockRate),
+            (f'/api/depth-tiers/{palier.pk}/monster-spawns/',
+             {'monster': gobelin.pk, 'spawn_chance': 0.1}, DepthTierMonsterSpawn),
+        ]
+        for url, data, modele in cas:
+            with self.subTest(url=url):
+                self.assertEqual(self.call('post', url, self.alice, data).status_code, 201)
+                resp = self.call('post', url, self.alice, data, tolere_500=True)
+                self.assertEqual(resp.status_code, 400)
+                self.assertIn('déjà', str(resp.json()))
+                self.assertEqual(modele.objects.count(), 1)
+        # Le même ingrédient reste permis dans la recette d'un AUTRE objet.
+        resp = self.call('post', f'/api/weapons/{self.hache.pk}/recipe/', self.alice,
+                         {'ingredient': self.pierre.pk})
+        self.assertEqual(resp.status_code, 201)
 
 
 CORPS = {'slot_key': 'corps', 'default_x': 0, 'default_y': 0, 'required': True}
