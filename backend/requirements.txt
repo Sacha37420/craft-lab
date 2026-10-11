@@ -11,3 +11,4 @@ mistralai>=1.2
 google-genai>=1.0
 requests>=2.31
 openai>=1.50
+gunicorn>=23.0,<24.0
