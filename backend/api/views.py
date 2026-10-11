@@ -4,6 +4,7 @@ import mimetypes
 import uuid
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status, viewsets
@@ -836,15 +837,18 @@ class WorldViewSet(viewsets.ModelViewSet):
         """
         world = self.get_object()
         diff_updates = request.data.get('block_diff')
-        if diff_updates:
-            world.block_diff.update(diff_updates)
-            world.save(update_fields=['block_diff', 'updated_at'])
         char_data = request.data.get('character')
-        if char_data:
-            char, _ = Character.objects.get_or_create(world=world, owner_email=request.user.email)
-            serializer = CharacterSerializer(char, data=char_data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
+        # Une seule transaction : un personnage refusé (400) ne doit pas laisser
+        # le terrain déjà modifié derrière lui — c'est tout l'objet de cet appel.
+        with transaction.atomic():
+            if diff_updates:
+                world.block_diff.update(diff_updates)
+                world.save(update_fields=['block_diff', 'updated_at'])
+            if char_data:
+                char, _ = Character.objects.get_or_create(world=world, owner_email=request.user.email)
+                serializer = CharacterSerializer(char, data=char_data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
         return Response({'saved': True})
 
     @action(detail=True, methods=['post'], url_path='relay-ticket')

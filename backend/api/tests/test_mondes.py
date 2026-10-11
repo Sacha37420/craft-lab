@@ -164,18 +164,25 @@ class SauvegardeTests(CraftTestCase):
         resp = self.call('post', self.url, self.alice, {'character': {'hp': 'beaucoup'}})
         self.assertEqual(resp.status_code, 400)
 
-    # ── Défauts constatés (I4 : code de production inchangé) ──────────────────
-    @unittest.expectedFailure
+    # ── Défauts corrigés (dérogation de l'architecte à I4) ────────────────────
     def test_sauvegarde_refusee_ne_laisse_rien_d_ecrit(self):
-        """DÉFAUT — `save` existe pour éviter « deux requêtes séparées qui
-        pourraient réussir partiellement », mais le diff du monde est écrit
-        AVANT la validation du personnage : une sauvegarde refusée (400) a déjà
-        modifié le terrain."""
+        """`save` existe pour éviter une réussite partielle : un personnage
+        refusé (400) ne laisse ni terrain modifié ni personnage créé."""
+        avant = World.objects.get().updated_at
         resp = self.call('post', self.url, self.alice,
                          {'block_diff': {'9,9': 7}, 'character': {'hp': 'beaucoup'}})
         self.assertEqual(resp.status_code, 400)
         self.monde.refresh_from_db()
         self.assertEqual(self.monde.block_diff, {'0,0': 1, '5,5': 2})
+        self.assertEqual(self.monde.updated_at, avant)
+        self.assertEqual(Character.objects.count(), 0)
+        # Et la sauvegarde valide qui suit passe en entier.
+        resp = self.call('post', self.url, self.alice,
+                         {'block_diff': {'9,9': 7}, 'character': {'hp': 12}})
+        self.assertEqual(resp.status_code, 200)
+        self.monde.refresh_from_db()
+        self.assertEqual(self.monde.block_diff, {'0,0': 1, '5,5': 2, '9,9': 7})
+        self.assertEqual(Character.objects.get().hp, 12)
 
     @unittest.expectedFailure
     def test_diff_mal_forme_refuse_proprement(self):
