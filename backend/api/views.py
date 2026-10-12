@@ -1,7 +1,6 @@
 import base64
 import binascii
 import hmac
-import mimetypes
 import uuid
 
 from django.conf import settings
@@ -84,6 +83,32 @@ _VALID_PROVIDERS = {key for key, _ in PROVIDER_CHOICES}
 # Borne haute de `segment_count` (apply-template) : celle du champ « Nombre de
 # segments » de l'interface (monster-builder.component.html, max="20").
 MAX_RIG_SEGMENTS = 20
+
+# Formats d'image acceptés comme icône ou sprite — liste fermée, extension
+# associée. Pas de SVG : c'est un document qui peut porter du script.
+_IMAGE_EXTENSIONS = {
+    'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
+}
+
+
+def _image_type(data: bytes) -> str:
+    """Type MIME d'une image, lu dans son CONTENU (signature de format) — jamais
+    dans l'extension ni dans le type annoncé par le client, qui ne prouvent
+    rien. Lève une erreur de validation si ce n'est aucun des formats acceptés.
+
+    Limite assumée : c'est la signature qui est contrôlée, pas un décodage
+    complet (aucune bibliothèque d'images dans les dépendances de l'app)."""
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if data.startswith(b'\xff\xd8\xff'):
+        return 'image/jpeg'
+    if data[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    raise ValidationError(
+        {'image': "Le fichier n'est pas une image PNG, JPEG, GIF ou WebP."},
+    )
 
 
 def _save_child(serializer, **parent):
@@ -356,6 +381,7 @@ class ItemCategoryViewSetMixin:
         # Chemin stable par item (pas par génération) : une régénération
         # écrase le même fichier storage (upsert, cf. FileListUploadView côté
         # storage), aucun blob orphelin ne s'accumule.
+        mime_type = _image_type(image_bytes)
         relative_path = f'icons/{item.category}/{item.id}.png'
         try:
             upload_bytes(request.headers.get('Authorization', ''), relative_path, image_bytes, mime_type)
@@ -525,6 +551,7 @@ class MonsterViewSet(viewsets.ModelViewSet):
                 raise ValidationError({'image_base64': "Image invalide (base64 non décodable)."}) from exc
             mime_type = request.data.get('mime_type') or 'image/png'
 
+        mime_type = _image_type(image_bytes)
         relative_path = f'icons/monster/{monster.id}.png'
         try:
             upload_bytes(request.headers.get('Authorization', ''), relative_path, image_bytes, mime_type)
@@ -787,6 +814,8 @@ class SpriteAssetViewSet(viewsets.ModelViewSet):
             mime_type = request.data.get('mime_type') or 'image/png'
             source = SpriteAsset.Source.AI_GENERATED
 
+        mime_type = _image_type(image_bytes)
+
         name = (request.data.get('name') or '').strip()
         if not name:
             raise ValidationError({'name': 'Requis.'})
@@ -804,7 +833,7 @@ class SpriteAssetViewSet(viewsets.ModelViewSet):
         else:
             tags = []
 
-        ext = mimetypes.guess_extension(mime_type) or '.png'
+        ext = _IMAGE_EXTENSIONS[mime_type]
         relative_path = f'sprite-assets/{category}/{uuid.uuid4().hex}{ext}'
         try:
             upload_bytes(request.headers.get('Authorization', ''), relative_path, image_bytes, mime_type)

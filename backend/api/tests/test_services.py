@@ -74,7 +74,8 @@ class IconesTests(CraftTestCase):
         resp = self.call('post', self.url, self.tok, {'file': fichier}, fmt='multipart')
         self.assertEqual(resp.status_code, 200, resp.content)
         nom, octets, mime = self.storage_post.call_args.kwargs['files']['file']
-        self.assertEqual((octets, mime), (PNG, 'image/webp'))
+        # Le type transmis est celui du contenu, pas celui qu'annonce le client.
+        self.assertEqual((octets, mime), (PNG, 'image/png'))
 
     def test_image_absente_ou_illisible_refusee_sans_appeler_storage(self):
         for data in ({}, {'image_base64': ''}, {'image_base64': 'pas du base64 !!'},
@@ -125,6 +126,75 @@ class IconesTests(CraftTestCase):
         self.assertEqual(resp.status_code, 502)
         self.assertEqual(SpriteAsset.objects.count(), 0)
         self.assertEqual(Monster.objects.get().icon_path, '')
+
+
+JPEG = b'\xff\xd8\xff\xe0\x00\x10JFIF' + b'octets'
+GIF = b'GIF89a' + b'octets'
+WEBP = b'RIFF\x10\x00\x00\x00WEBPVP8 ' + b'octets'
+PAS_DES_IMAGES = {
+    'html': b'<!doctype html><script>alert(1)</script>',
+    'svg': b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    'texte': b'bonjour',
+    'executable': b'MZ\x90\x00\x03',
+    'riff_non_webp': b'RIFF\x10\x00\x00\x00WAVEfmt ',
+    'png_tronque': b'\x89PNG',
+    'vide': b'',
+}
+
+
+class ContenuImageTests(CraftTestCase):
+    """Ce qui part vers `storage` comme icône ou sprite est une image : c'est le
+    contenu qui est examiné, pas l'extension ni le type annoncé par le client."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.tok = token('alice')
+        self.storage_ok()
+        self.routes = {
+            'icone_objet': (f'/api/weapons/{make_weapon().pk}/icon/', {}),
+            'icone_monstre': (f'/api/monsters/{make_monster().pk}/icon/', {}),
+            'bibliotheque': ('/api/sprite-assets/', {'name': 'Bras', 'category': 'monster-part'}),
+        }
+
+    def test_un_fichier_qui_n_est_pas_une_image_est_refuse(self):
+        for route, (url, extra) in self.routes.items():
+            for nom, octets in PAS_DES_IMAGES.items():
+                with self.subTest(route=route, contenu=nom, envoi='multipart'):
+                    fichier = SimpleUploadedFile('icone.png', octets, content_type='image/png')
+                    resp = self.call('post', url, self.tok, {**extra, 'file': fichier}, fmt='multipart')
+                    self.assertEqual(resp.status_code, 400)
+                if octets:
+                    with self.subTest(route=route, contenu=nom, envoi='base64'):
+                        resp = self.call('post', url, self.tok, {
+                            **extra, 'image_base64': base64.b64encode(octets).decode(),
+                            'mime_type': 'image/png'})
+                        self.assertEqual(resp.status_code, 400)
+        self.storage_post.assert_not_called()
+        self.assertEqual(SpriteAsset.objects.count(), 0)
+        self.assertEqual(Item.objects.get().icon_path, '')
+        self.assertEqual(Monster.objects.get().icon_path, '')
+
+    def test_formats_acceptes_et_type_tire_du_contenu(self):
+        formats = {'image/png': PNG, 'image/jpeg': JPEG, 'image/gif': GIF, 'image/webp': WEBP}
+        for route, (url, extra) in self.routes.items():
+            for mime, octets in formats.items():
+                with self.subTest(route=route, mime=mime):
+                    # Type annoncé volontairement faux : il ne compte pas.
+                    fichier = SimpleUploadedFile('x.html', octets, content_type='text/html')
+                    resp = self.call('post', url, self.tok, {**extra, 'file': fichier}, fmt='multipart')
+                    self.assertIn(resp.status_code, (200, 201), resp.content)
+                    _, envoyes, transmis = self.storage_post.call_args.kwargs['files']['file']
+                    self.assertEqual((envoyes, transmis), (octets, mime))
+
+    def test_l_extension_d_un_sprite_suit_le_contenu(self):
+        url, extra = self.routes['bibliotheque']
+        for octets, extension in ((PNG, '.png'), (JPEG, '.jpg'), (GIF, '.gif'), (WEBP, '.webp')):
+            with self.subTest(extension=extension):
+                resp = self.call('post', url, self.tok, {
+                    **extra, 'image_base64': base64.b64encode(octets).decode(),
+                    'mime_type': 'text/html'})
+                self.assertEqual(resp.status_code, 201, resp.content)
+                self.assertTrue(resp.json()['file_path'].endswith(extension), resp.json()['file_path'])
 
 
 class BibliothequeTests(CraftTestCase):
