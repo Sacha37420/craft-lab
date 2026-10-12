@@ -6,7 +6,6 @@ from .views import (
     ArtifactViewSet,
     BlockViewSet,
     CatalogueAssistantView,
-    DepartmentListView,
     DepthTierViewSet,
     GameMapViewSet,
     ImageAssistantView,
@@ -19,7 +18,6 @@ from .views import (
     SpriteAssetViewSet,
     StatusEffectViewSet,
     ToolViewSet,
-    UserListView,
     VerifyRelayTicketView,
     WeaponViewSet,
     WorldViewSet,
@@ -43,8 +41,6 @@ router.register('rig-templates', RigTemplateViewSet, basename='rig-template')
 
 urlpatterns = [
     path('me/',          MeView.as_view()),
-    path('departments/', DepartmentListView.as_view()),
-    path('users/',       UserListView.as_view()),
     path('ai-config/<str:provider>/', AIProviderConfigView.as_view()),
     path('catalogue-assistant/suggest/', CatalogueAssistantView.as_view()),
     path('image-assistant/generate/', ImageAssistantView.as_view()),

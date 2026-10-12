@@ -10,7 +10,7 @@ from api.views import VerifyRelayTicketView
 from .base import AUTRE_RSA, CLE_RELAIS, CraftTestCase, make_weapon, make_world, token
 
 LECTURES = [
-    '/api/me/', '/api/users/', '/api/departments/', '/api/ai-config/claude/',
+    '/api/me/', '/api/ai-config/claude/',
     '/api/items/', '/api/status-effects/', '/api/weapons/', '/api/projectiles/',
     '/api/artifacts/', '/api/tools/', '/api/blocks/', '/api/monsters/',
     '/api/game-maps/', '/api/depth-tiers/', '/api/portals/', '/api/worlds/',
@@ -122,17 +122,13 @@ class PorteTests(CraftTestCase):
 
 
 class AnnuaireTests(CraftTestCase):
-    """`GET /api/users/` — reliquat du gabarit, qu'aucun écran n'appelle."""
+    """L'annuaire hérité du gabarit (`/api/users/`, `/api/departments/`) n'existe
+    plus : retiré de tout le lab le 2026-10-12."""
 
-    def test_la_liste_des_comptes_ne_rend_pas_les_adresses(self):
+    def test_l_annuaire_du_gabarit_n_existe_plus(self):
         for uid in ('alice', 'bob'):
             self.assertEqual(self.get('/api/me/', token(uid)).status_code, 200)
-        resp = self.get('/api/users/', token('carole'))
-        self.assertEqual(resp.status_code, 200)
-        self.assertNotIn('@', resp.content.decode())
-        # (La table porte aussi des comptes d'exemple semés par une migration du gabarit.)
-        self.assertLessEqual({'alice', 'bob'}, {u['display_name'] for u in resp.json()})
-        for compte in resp.json():
-            self.assertEqual(set(compte), {'display_name', 'department', 'registered_at'})
+        for chemin in ('/api/users/', '/api/departments/'):
+            self.assertEqual(self.get(chemin, token('carole')).status_code, 404)
         # Chacun continue de lire sa propre adresse.
         self.assertEqual(self.get('/api/me/', token('alice')).json()['email'], 'alice@ssolab.local')
