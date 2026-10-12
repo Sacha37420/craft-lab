@@ -217,6 +217,38 @@ class SousListesTests(CraftTestCase):
         self.assertEqual((DepthTier.objects.count(), DepthTierBlockRate.objects.count()), (0, 0))
         self.assertTrue(Block.objects.filter(pk=self.pierre.pk).exists())
 
+    def test_les_probabilites_sont_entre_zero_et_un(self):
+        """Le jeu les lit comme des probabilités (`Math.random() <= chance`,
+        poids de bruit du terrain) et l'interface les saisit entre 0 et 1."""
+        carte = make_map()
+        palier = DepthTier.objects.create(game_map=carte, depth_index=0)
+        gobelin = make_monster()
+        champs = [
+            (f'/api/blocks/{self.pierre.pk}/drops/', {'dropped_item': self.epee.pk}, 'chance', BlockDrop),
+            (f'/api/monsters/{gobelin.pk}/drops/', {'dropped_item': self.epee.pk}, 'chance', MonsterDrop),
+            (f'/api/depth-tiers/{palier.pk}/block-rates/', {'block': self.pierre.pk}, 'rate',
+             DepthTierBlockRate),
+            (f'/api/depth-tiers/{palier.pk}/monster-spawns/', {'monster': gobelin.pk}, 'spawn_chance',
+             DepthTierMonsterSpawn),
+            ('/api/depth-tiers/', {'game_map': carte.pk, 'depth_index': 7}, 'void_rate', DepthTier),
+        ]
+        for url, base, champ, modele in champs:
+            avant = modele.objects.count()
+            for valeur in (-0.01, 1.01, 5, 100, -1, 'nan', 'inf', '-inf'):
+                with self.subTest(champ=champ, url=url, valeur=valeur):
+                    resp = self.call('post', url, self.alice, {**base, champ: valeur})
+                    self.assertEqual(resp.status_code, 400)
+                    self.assertIn(champ, resp.json())
+            self.assertEqual(modele.objects.count(), avant)
+            for valeur in (0, 1, 0.35):
+                with self.subTest(champ=champ, url=url, valeur=valeur):
+                    resp = self.call('post', url, self.alice, {**base, champ: valeur})
+                    self.assertEqual(resp.status_code, 201, resp.content)
+                    modele.objects.filter(pk=resp.json()['id']).delete()
+        # Et à la modification d'un palier.
+        resp = self.call('patch', f'/api/depth-tiers/{palier.pk}/', self.alice, {'void_rate': 3})
+        self.assertEqual(resp.status_code, 400)
+
     # ── Défaut corrigé (dérogation de l'architecte à I4) ──────────────────────
     def test_doublon_dans_une_sous_liste_refuse_proprement(self):
         """Un ingrédient par recette, un projectile par arme, un block et un

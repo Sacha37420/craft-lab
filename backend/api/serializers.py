@@ -81,6 +81,16 @@ def _icon_url(icon_path: str) -> str | None:
     return f'/api/files/{settings.STORAGE_NAMESPACE}/content/{icon_path}'
 
 
+def probabilite(value):
+    """Borne à [0, 1] les quatre grandeurs que le jeu lit comme des probabilités
+    ou des poids (`chance`, `rate`, `spawn_chance`, `void_rate` — saisies entre 0
+    et 1 dans l'interface, comparées à `Math.random()` ou multipliées au bruit du
+    terrain). Écrit en double inégalité pour refuser aussi NaN, que des
+    validateurs min/max laisseraient passer."""
+    if not 0 <= value <= 1:
+        raise serializers.ValidationError('Doit être compris entre 0 et 1.')
+
+
 class StatusEffectSerializer(serializers.ModelSerializer):
     class Meta:
         model = StatusEffect
@@ -121,6 +131,7 @@ class BlockDropSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlockDrop
         fields = ['id', 'dropped_item', 'dropped_item_name', 'quantity', 'chance']
+        extra_kwargs = {'chance': {'validators': [probabilite]}}
 
 
 class ArtifactEffectSerializer(serializers.ModelSerializer):
@@ -275,6 +286,7 @@ class MonsterDropSerializer(serializers.ModelSerializer):
     class Meta:
         model = MonsterDrop
         fields = ['id', 'dropped_item', 'dropped_item_name', 'quantity', 'chance']
+        extra_kwargs = {'chance': {'validators': [probabilite]}}
 
 
 class MonsterSerializer(serializers.ModelSerializer):
@@ -314,6 +326,7 @@ class DepthTierBlockRateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DepthTierBlockRate
         fields = ['id', 'block', 'block_name', 'rate']
+        extra_kwargs = {'rate': {'validators': [probabilite]}}
 
 
 class DepthTierMonsterSpawnSerializer(serializers.ModelSerializer):
@@ -322,6 +335,7 @@ class DepthTierMonsterSpawnSerializer(serializers.ModelSerializer):
     class Meta:
         model = DepthTierMonsterSpawn
         fields = ['id', 'monster', 'monster_name', 'spawn_chance']
+        extra_kwargs = {'spawn_chance': {'validators': [probabilite]}}
 
 
 class DepthTierSerializer(serializers.ModelSerializer):
@@ -334,6 +348,7 @@ class DepthTierSerializer(serializers.ModelSerializer):
     class Meta:
         model = DepthTier
         fields = ['id', 'game_map', 'depth_index', 'void_rate']
+        extra_kwargs = {'void_rate': {'validators': [probabilite]}}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
