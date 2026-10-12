@@ -119,3 +119,20 @@ class PorteTests(CraftTestCase):
         self.assertRefuse(self.get('/api/worlds/', None, {'token': tok}))
         resp = self.call('get', '/api/worlds/', None, HTTP_X_RELAY_KEY=CLE_RELAIS)
         self.assertRefuse(resp)
+
+
+class AnnuaireTests(CraftTestCase):
+    """`GET /api/users/` — reliquat du gabarit, qu'aucun écran n'appelle."""
+
+    def test_la_liste_des_comptes_ne_rend_pas_les_adresses(self):
+        for uid in ('alice', 'bob'):
+            self.assertEqual(self.get('/api/me/', token(uid)).status_code, 200)
+        resp = self.get('/api/users/', token('carole'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('@', resp.content.decode())
+        # (La table porte aussi des comptes d'exemple semés par une migration du gabarit.)
+        self.assertLessEqual({'alice', 'bob'}, {u['display_name'] for u in resp.json()})
+        for compte in resp.json():
+            self.assertEqual(set(compte), {'display_name', 'department', 'registered_at'})
+        # Chacun continue de lire sa propre adresse.
+        self.assertEqual(self.get('/api/me/', token('alice')).json()['email'], 'alice@ssolab.local')

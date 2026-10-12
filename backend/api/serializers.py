@@ -59,7 +59,9 @@ class UserRecordSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserRecord
-        fields = ['email', 'display_name', 'department', 'registered_at']
+        # Pas l'adresse : cette liste est lisible par tout membre du groupe et
+        # aucun écran ne s'en sert. Chacun lit la sienne par /api/me/.
+        fields = ['display_name', 'department', 'registered_at']
 
 
 # ──────────────────────────────────────────────────────────────────────────────
