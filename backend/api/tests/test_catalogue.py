@@ -11,7 +11,7 @@ from __future__ import annotations
 from api.models import (
     ArtifactEffect, Artifact, Block, BlockDrop, DepthTier, DepthTierBlockRate,
     DepthTierMonsterSpawn, Item, Monster, MonsterDrop, MonsterSkill, Projectile,
-    RecipeIngredient, RigTemplate, Weapon, WeaponProjectile,
+    RecipeIngredient, RigTemplate, SpriteAsset, Weapon, WeaponProjectile,
 )
 
 from .base import CraftTestCase, make_block, make_map, make_monster, make_weapon, token
@@ -294,6 +294,11 @@ class GabaritsTests(CraftTestCase):
         self.alice = token('alice')
         self.monstre = make_monster(hp=33, rig={'parts': [{'id': 'ancien'}], 'skills': []})
         self.url = f'/api/monsters/{self.monstre.pk}/apply-template/'
+        self.img_corps, self.img_bras, self.img_segment = (
+            SpriteAsset.objects.create(name=nom, category='monster-part', source='upload',
+                                       file_path=f'sprite-assets/monster-part/{nom}.png').pk
+            for nom in ('corps', 'bras', 'segment')
+        )
         self.bipede = RigTemplate.objects.create(
             name='Bipède de test', slots=[CORPS, BRAS],
             default_skills=[{'name': 'Marche', 'type': 'move', 'steps': [
@@ -314,11 +319,11 @@ class GabaritsTests(CraftTestCase):
         return self.call('post', self.url, self.alice, data, tolere_500=True)
 
     def test_les_poses_sont_reindexees_par_piece(self):
-        resp = self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': 11, 'bras': 22})
+        resp = self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': self.img_corps, 'bras': self.img_bras})
         self.assertEqual(resp.status_code, 200, resp.content)
         rig = Monster.objects.get().rig
         self.assertEqual([(p['assetId'], p['x'], p['y']) for p in rig['parts']],
-                         [(11, 0, 0), (22, 10, -4)])
+                         [(self.img_corps, 0, 0), (self.img_bras, 10, -4)])
         corps_id, bras_id = (p['id'] for p in rig['parts'])
         self.assertNotEqual(corps_id, bras_id)
         etapes = rig['skills'][0]['steps']
@@ -332,25 +337,42 @@ class GabaritsTests(CraftTestCase):
         self.assertEqual(resp.json()['rig'], rig)
 
     def test_le_rig_est_remplace_et_rien_d_autre(self):
-        self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': 11})
+        self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': self.img_corps})
         monstre = Monster.objects.get()
         self.assertNotIn('ancien', str(monstre.rig))
         self.assertEqual((monstre.hp, monstre.name), (33, 'Gobelin'))
 
     def test_slot_facultatif_non_choisi_ignore(self):
-        self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': 11})
+        self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': self.img_corps})
         rig = Monster.objects.get().rig
         self.assertEqual(len(rig['parts']), 1)
         corps_id = rig['parts'][0]['id']
         self.assertEqual([set(e['poses']) for e in rig['skills'][0]['steps']], [{corps_id}, set()])
 
     def test_slot_requis_manquant_refuse(self):
-        for slot_assets in ({}, {'bras': 22}, None):
+        for slot_assets in ({}, {'bras': self.img_bras}, None):
             with self.subTest(slot_assets=slot_assets):
                 resp = self.appliquer(template_id=self.bipede.pk, slot_assets=slot_assets)
                 self.assertEqual(resp.status_code, 400)
                 self.assertIn('corps', str(resp.json()))
         self.assertEqual(Monster.objects.get().rig, {'parts': [{'id': 'ancien'}], 'skills': []})
+
+    def test_les_images_choisies_existent_dans_la_bibliotheque(self):
+        """Un `assetId` inconnu donnerait un monstre dont une pièce n'a pas
+        d'image : refusé (400) sans toucher au rig."""
+        absent = self.img_segment + 1000
+        for slot_assets in ({'corps': absent}, {'corps': self.img_corps, 'bras': absent},
+                            {'corps': 'tête'}, {'corps': str(self.img_corps)}, {'corps': True},
+                            {'corps': 1.5}, {'corps': [self.img_corps]}, ['corps'], 'corps'):
+            with self.subTest(slot_assets=slot_assets):
+                resp = self.appliquer(template_id=self.bipede.pk, slot_assets=slot_assets)
+                self.assertEqual(resp.status_code, 400)
+                self.assertIn('slot_assets', resp.json())
+        self.assertEqual(Monster.objects.get().rig, {'parts': [{'id': 'ancien'}], 'skills': []})
+        # Une clé qui n'est pas un slot du gabarit reste ignorée, comme avant.
+        resp = self.appliquer(template_id=self.bipede.pk,
+                              slot_assets={'corps': self.img_corps, 'queue': absent})
+        self.assertEqual(resp.status_code, 200, resp.content)
 
     def test_gabarit_inconnu(self):
         for template_id in (99999, None, 'bipède'):
@@ -358,7 +380,7 @@ class GabaritsTests(CraftTestCase):
                 self.assertEqual(self.appliquer(template_id=template_id, slot_assets={}).status_code, 404)
 
     def test_slot_repetable_espacement_et_onde(self):
-        resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5}, segment_count=3)
+        resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': self.img_segment}, segment_count=3)
         self.assertEqual(resp.status_code, 200, resp.content)
         rig = Monster.objects.get().rig
         # Segment i à i × l'espacement.
@@ -371,9 +393,9 @@ class GabaritsTests(CraftTestCase):
         self.assertEqual([etape1[i]['dy'] for i in ids], [-1, 1, -1])
 
     def test_slot_repetable_nombre_par_defaut_et_plancher(self):
-        self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5})
+        self.appliquer(template_id=self.ver.pk, slot_assets={'segment': self.img_segment})
         self.assertEqual(len(Monster.objects.get().rig['parts']), 4)
-        self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5}, segment_count=-3)
+        self.appliquer(template_id=self.ver.pk, slot_assets={'segment': self.img_segment}, segment_count=-3)
         self.assertEqual(len(Monster.objects.get().rig['parts']), 1)
 
     def test_les_gabarits_ne_s_editent_pas_par_l_api(self):
@@ -391,7 +413,7 @@ class GabaritsTests(CraftTestCase):
         construction de pièces sans limite."""
         for valeur in ('beaucoup', '3.5', [3], {'n': 3}, True, 21, '21', 10**9):
             with self.subTest(segment_count=valeur):
-                resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5},
+                resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': self.img_segment},
                                       segment_count=valeur)
                 self.assertEqual(resp.status_code, 400)
                 self.assertIn('segment_count', resp.json())
@@ -399,10 +421,10 @@ class GabaritsTests(CraftTestCase):
         # Les bornes de l'interface passent, y compris en chaîne.
         for valeur, attendu in ((20, 20), ('2', 2), (2.0, 2)):
             with self.subTest(segment_count=valeur):
-                resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': 5},
+                resp = self.appliquer(template_id=self.ver.pk, slot_assets={'segment': self.img_segment},
                                       segment_count=valeur)
                 self.assertEqual(resp.status_code, 200, resp.content)
                 self.assertEqual(len(Monster.objects.get().rig['parts']), attendu)
         # Sans slot répétable, la valeur est ignorée comme avant.
-        resp = self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': 1}, segment_count=3)
+        resp = self.appliquer(template_id=self.bipede.pk, slot_assets={'corps': self.img_corps}, segment_count=3)
         self.assertEqual(resp.status_code, 200)

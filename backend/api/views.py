@@ -588,6 +588,24 @@ class MonsterViewSet(viewsets.ModelViewSet):
                     {'segment_count': f'Au plus {MAX_RIG_SEGMENTS} segments.'},
                 )
 
+        # Chaque image choisie pour un slot du gabarit doit exister dans la
+        # bibliothèque : un `assetId` inconnu donnerait une pièce sans image.
+        # Les clés qui ne sont pas un slot du gabarit restent ignorées.
+        if not isinstance(slot_assets, dict):
+            raise ValidationError({'slot_assets': "Doit être un objet {slot: identifiant d'image}."})
+        chosen = {
+            slot['slot_key']: slot_assets[slot['slot_key']]
+            for slot in template.slots if slot_assets.get(slot['slot_key']) is not None
+        }
+        if any(isinstance(v, bool) or not isinstance(v, int) for v in chosen.values()):
+            raise ValidationError({'slot_assets': "Chaque image est désignée par son identifiant (entier)."})
+        known = set(SpriteAsset.objects.filter(pk__in=chosen.values()).values_list('pk', flat=True))
+        unknown = sorted(key for key, asset_id in chosen.items() if asset_id not in known)
+        if unknown:
+            raise ValidationError(
+                {'slot_assets': f"Image absente de la bibliothèque pour : {', '.join(unknown)}."},
+            )
+
         parts = []
         # slot_key -> partId (slot simple) ou slot_key -> [partId, ...] (slot repeatable, un id par segment).
         slot_to_part_ids: dict = {}
