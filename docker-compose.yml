@@ -54,9 +54,13 @@ services:
     build: ./relay
     container_name: craft-lab-relay
     restart: unless-stopped
-    env_file: .env
+    # Uniquement ce que lit relay/server.js. `env_file: .env` donnait au relais
+    # SECRET_KEY, DB_PASSWORD et la clé de chiffrement des clés IA. NODE_ENV
+    # n'est pas posé (il ne l'était pas non plus par le .env) : comportement
+    # d'express inchangé. Une clé vide fait refuser chaque billet par le backend.
     environment:
       BACKEND_INTERNAL_URL: http://craft-lab-backend:8000
+      RELAY_INTERNAL_KEY: ${RELAY_INTERNAL_KEY:-}
     ports:
       - "${PORT_RELAY:-8098}:4310"
     networks:
