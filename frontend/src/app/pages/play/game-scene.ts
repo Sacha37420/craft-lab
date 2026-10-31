@@ -327,7 +327,7 @@ export class GameScene extends Phaser.Scene {
     // Un asset (ex: une jambe) peut être partagé par plusieurs monstres — dédupliqué ici via un Set
     // local, pas via this.textures.exists() qui ne se peuple qu'après le chargement (donc toujours
     // faux à ce stade de preload(), inutile pour éviter une double mise en file). `textureUrl` est
-    // déjà résolue (statique CC0 ou storage+token, cf. PlayComponent/ApiService.spriteAssetUrl) —
+    // déjà résolue (statique CC0 ou URL `blob:` storage, cf. PlayComponent.resolveTextureUrls) —
     // GameScene ne construit plus jamais lui-même de chemin `assets/sprite-library/...`.
     const queuedRigAssets = new Set<number>();
     for (const def of this.cfg.monsters.values()) {

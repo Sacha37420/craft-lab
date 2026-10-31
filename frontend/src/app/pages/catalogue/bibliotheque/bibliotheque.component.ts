@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, SpriteAsset, SpriteAssetCategory } from '../../../core/api.service';
+import { AuthSrcDirective } from '../../../shared/auth-src.directive';
 
 /** Libellés FR des 8 catégories (Lot 10, cf. SpriteAsset côté backend) — source unique
  * pour le select de filtre, le select du formulaire d'upload et le badge de catégorie. */
@@ -25,7 +26,7 @@ const CATEGORIES = Object.keys(CATEGORY_LABELS) as SpriteAssetCategory[];
 @Component({
   selector: 'app-bibliotheque',
   standalone: true,
-  imports: [FormsModule],
+  imports: [AuthSrcDirective, FormsModule],
   templateUrl: './bibliotheque.component.html',
 })
 export class BibliothequeComponent implements OnInit {

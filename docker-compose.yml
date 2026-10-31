@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8097:8000"
+      - "${LAB_BIND_ADDR:-127.0.0.1}:8097:8000"
     networks:
       - sso-net
       - dev-net
@@ -42,7 +42,7 @@ services:
       PORT_RELAY: ${PORT_RELAY:-}
       STORAGE_PORT_BACKEND: ${STORAGE_PORT_BACKEND:-}
     ports:
-      - "4213:80"
+      - "${LAB_BIND_ADDR:-127.0.0.1}:4213:80"
     networks:
       - sso-net
     labels:
@@ -62,7 +62,7 @@ services:
       BACKEND_INTERNAL_URL: http://craft-lab-backend:8000
       RELAY_INTERNAL_KEY: ${RELAY_INTERNAL_KEY:-}
     ports:
-      - "${PORT_RELAY:-8098}:4310"
+      - "${LAB_BIND_ADDR:-127.0.0.1}:${PORT_RELAY:-8098}:4310"
     networks:
       - sso-net
       - dev-net

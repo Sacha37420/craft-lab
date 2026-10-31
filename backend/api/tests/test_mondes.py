@@ -251,6 +251,17 @@ class TicketsDeRelaisTests(CraftTestCase):
         self.assertEqual(self.verifier(ticket).status_code, 410)
         self.assertIsNotNone(RelayTicket.objects.get().consumed_at)
 
+    def test_deux_verifications_simultanees_une_seule_reussit(self):
+        # Les deux lisent le billet encore libre ; la seconde consommation échoue
+        # (mise à jour conditionnelle), pas un second 200.
+        ticket = self.emettre()
+        lu = RelayTicket.objects.get(token=ticket)
+        self.assertTrue(lu.is_valid())
+        self.assertEqual(self.verifier(ticket).status_code, 200)
+        self.assertFalse(lu.consume())                    # copie lue avant la 1re consommation
+        with mock.patch.object(RelayTicket, 'is_valid', return_value=True):
+            self.assertEqual(self.verifier(ticket).status_code, 410)
+
     def test_expire_apres_trente_secondes(self):
         ticket = self.emettre()
         RelayTicket.objects.update(created_at=timezone.now() - timedelta(seconds=31))

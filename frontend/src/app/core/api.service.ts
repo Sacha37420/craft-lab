@@ -1,12 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { KeycloakService } from './keycloak.service';
+import { apiUrl, relayUrl, storageApiUrl } from './env';
 import { TierRules } from '../shared/world/terrain-generation';
 
-interface EnvWindow {
-  __env?: { apiUrl?: string; storageApiUrl?: string; relayUrl?: string };
-}
 
 export type ItemCategory = 'block' | 'weapon' | 'projectile' | 'artifact' | 'tool';
 export type CatalogueCategoryPath = 'weapons' | 'projectiles' | 'artifacts' | 'tools' | 'blocks' | 'monsters';
@@ -371,41 +368,32 @@ export interface GeneratedImage {
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
-  private kc = inject(KeycloakService);
 
   private get base(): string {
-    return (window as unknown as EnvWindow).__env?.apiUrl
-      ?? 'http://localhost:8097';
-  }
-
-  private get storageApiUrl(): string {
-    return (window as unknown as EnvWindow).__env?.storageApiUrl
-      ?? 'http://localhost:8093';
+    return apiUrl();
   }
 
   get relayUrl(): string {
-    return (window as unknown as EnvWindow).__env?.relayUrl
-      ?? 'ws://localhost:8098/ws';
+    return relayUrl();
   }
 
   /**
-   * URL absolue d'une icône stockée dans storage, utilisable telle quelle
-   * dans un <img [src]> — le JWT part en paramètre d'URL car ni une balise
-   * <img> ne peut poser d'en-tête Authorization (cf. api/authentication.py
-   * côté storage, fallback `?token=` ; patron déjà vérifié dans le lab par
-   * atelier-3d/arbre-genealogique, cf. ApiService.mediaUrl() de ces apps).
+   * URL absolue d'une icône stockée dans storage, SANS jeton : storage exige
+   * l'en-tête Authorization, donc une telle adresse ne se pose jamais dans un
+   * <img [src]> — on l'affiche par `<img [appAuthSrc]>` ou on la lit par
+   * `AuthBlobService` (HttpClient + Blob, jeton posé par l'intercepteur).
    */
   iconUrl(path: string | null | undefined): string {
     if (!path) return '';
-    const token = this.kc.getToken();
-    return `${this.storageApiUrl}${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    return `${storageApiUrl()}${path}`;
   }
 
   /**
-   * URL utilisable d'un SpriteAsset (Lot 10) — point UNIQUE de résolution, bifurque selon `source`
+   * URL d'un SpriteAsset (Lot 10) — point UNIQUE de résolution, bifurque selon `source`
    * (cf. SpriteAsset.asset_url côté backend, même décision Lot 10) : cc0-bundled est un chemin
-   * relatif statique déjà prêt à l'emploi (aucune requête storage/token, perf/cache préservés),
-   * tout le reste passe par iconUrl() comme n'importe quelle icône storage.
+   * relatif statique déjà prêt à l'emploi (aucune requête storage, perf/cache préservés),
+   * tout le reste passe par iconUrl() comme n'importe quelle icône storage (donc à lire par
+   * `AuthBlobService` / `[appAuthSrc]`, qui laissent passer telle quelle l'adresse statique).
    */
   spriteAssetUrl(asset: SpriteAsset): string {
     return asset.source === 'cc0-bundled' ? asset.asset_url : this.iconUrl(asset.asset_url);

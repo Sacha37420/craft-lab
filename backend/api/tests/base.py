@@ -29,6 +29,8 @@ from api.models import Block, GameMap, Item, Monster, Weapon, World
 
 APP = 'craft-lab'
 CLE_RELAIS = 'cle-relais-de-test-0123456789abcdef'
+# Clé Fernet du coffre pour les tests (jamais celle du .env de service).
+CLE_COFFRE = 'Y2xlLWR1LWNvZmZyZS1kZS10ZXN0LTMyLW9jdGV0cyE='
 STORAGE = 'http://storage.test:8000'
 MEMBRE = ['famille']
 REGLES = {'tiers': [{'depthIndex': 0, 'voidRate': 0.1}], 'monsterSpawns': []}
@@ -67,6 +69,17 @@ def token(uid: str = 'alice', groups=MEMBRE, azp=APP, *, email=_ABSENT,
     if email is not None:
         claims['email'] = email
     return jwt.encode(claims, key, algorithm=algorithm)
+
+
+def image(fmt: str = 'PNG', size=(4, 4)) -> bytes:
+    """Une vraie image, décodable par Pillow (api/limits.image_type la décode)."""
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    mode = 'P' if fmt == 'GIF' else 'RGB'
+    Image.new(mode, size, 1 if mode == 'P' else (200, 40, 40)).save(buf, format=fmt)
+    return buf.getvalue()
 
 
 def reponse(status: int = 201, payload=None, text: str = ''):
@@ -117,6 +130,7 @@ def make_world(name: str = 'Partie', owner: str = 'alice', **extra) -> World:
     STORAGE_INTERNAL_URL=STORAGE,
     STORAGE_NAMESPACE='craft-lab',
     SECRET_KEY='cle-django-de-test-sans-rapport-avec-le-service',
+    VAULT_ENCRYPTION_KEY=CLE_COFFRE,
 )
 class CraftTestCase(TestCase):
 

@@ -2,7 +2,7 @@
 
 @if (currentIconUrl()) {
   <div class="ai-image-current">
-    <img [src]="currentIconSrc" alt="" class="ai-image-thumb" />
+    <img [appAuthSrc]="currentIconSrc" alt="" class="ai-image-thumb" />
     <span class="hint">Icône actuelle</span>
   </div>
 }
@@ -88,7 +88,7 @@
                     [title]="item.name"
                     (click)="pickFromLibrary(item)"
                   >
-                    <img [src]="libraryAssetUrl(item)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+                    <img [appAuthSrc]="libraryAssetUrl(item)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
                     @if (pickingId() === item.id) { <span class="ai-pack-thumb-loading">…</span> }
                   </button>
                 }

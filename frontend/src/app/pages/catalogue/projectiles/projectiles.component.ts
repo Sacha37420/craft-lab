@@ -5,6 +5,7 @@ import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-edit
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 import { describeProjectileForPrompt } from '../../../shared/image-prompt';
+import { AuthSrcDirective } from '../../../shared/auth-src.directive';
 
 /**
  * Projectiles (cahier des charges 1.3) — utilisés par les armes à distance ;
@@ -14,7 +15,7 @@ import { describeProjectileForPrompt } from '../../../shared/image-prompt';
 @Component({
   selector: 'app-projectiles',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
+  imports: [AuthSrcDirective, FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './projectiles.component.html',
 })
 export class ProjectilesComponent implements OnInit {

@@ -869,6 +869,13 @@ class RelayTicket(models.Model):
         age = (timezone.now() - self.created_at).total_seconds()
         return age <= RELAY_TICKET_TTL_SECONDS
 
-    def consume(self) -> None:
-        self.consumed_at = timezone.now()
-        self.save(update_fields=['consumed_at'])
+    def consume(self) -> bool:
+        """Consomme le billet ; faux s'il l'a déjà été entre-temps. Mise à jour
+        conditionnelle en une requête : deux vérifications simultanées du même
+        billet ne peuvent pas réussir toutes les deux (lire puis écrire le
+        laissait possible)."""
+        now = timezone.now()
+        done = RelayTicket.objects.filter(pk=self.pk, consumed_at__isnull=True).update(consumed_at=now)
+        if done:
+            self.consumed_at = now
+        return bool(done)

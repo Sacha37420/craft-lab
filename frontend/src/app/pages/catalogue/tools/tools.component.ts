@@ -5,12 +5,13 @@ import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-edit
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 import { describeToolForPrompt } from '../../../shared/image-prompt';
+import { AuthSrcDirective } from '../../../shared/auth-src.directive';
 
 /** Outils (cahier des charges 1.5) — hache et pioche : puissance + vitesse de cassage. */
 @Component({
   selector: 'app-tools',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
+  imports: [AuthSrcDirective, FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './tools.component.html',
 })
 export class ToolsComponent implements OnInit {

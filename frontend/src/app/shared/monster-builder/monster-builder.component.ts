@@ -1,7 +1,10 @@
-import { Component, inject, input, OnInit, Output, EventEmitter, signal, computed } from '@angular/core';
+import { Component, inject, input, OnDestroy, OnInit, Output, EventEmitter, signal, computed } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import {
   ApiService, Monster, MonsterRig, MonsterRigPart, RigSkill, RigSkillStep, RigTemplate, SpriteAsset,
 } from '../../core/api.service';
+import { AuthBlobService, isObjectUrl } from '../../core/auth-blob.service';
+import { AuthSrcDirective } from '../auth-src.directive';
 import { describeMonsterRigPrompt } from '../image-prompt';
 
 /** Slots d'un montage de monstre par pièces — même vocabulaire que l'ancien
@@ -93,11 +96,14 @@ const CANVAS = 360;
 @Component({
   selector: 'app-monster-builder',
   standalone: true,
-  imports: [],
+  imports: [AuthSrcDirective],
   templateUrl: './monster-builder.component.html',
 })
-export class MonsterBuilderComponent implements OnInit {
+export class MonsterBuilderComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
+  private blobs = inject(AuthBlobService);
+  /** URL `blob:` créées pour le composite canvas — révoquées après usage et, au pire, ici. */
+  private objectUrls = new Set<string>();
 
   itemId = input.required<number>();
   monster = input.required<Monster>();
@@ -543,18 +549,40 @@ export class MonsterBuilderComponent implements OnInit {
 
   // ── Sauvegarde / composite ────────────────────────────────────────────────────────────────────
 
-  private loadImage(url: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      // Pièce potentiellement servie par storage (Lot 10, contenu utilisateur — cross-origin en
-      // dev local où storageApiUrl est un port différent) : sans ça, dessiner l'image dans le
-      // canvas ci-dessous le "tainterait" et ferait échouer toBlob() plus loin. Sans effet sur les
-      // pièces CC0 (même origine, aucun en-tête CORS requis pour elles).
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error(`Échec de chargement : ${url}`));
-      img.src = url;
-    });
+  ngOnDestroy(): void {
+    this.objectUrls.forEach(u => URL.revokeObjectURL(u));
+    this.objectUrls.clear();
+  }
+
+  /**
+   * Charge une pièce pour le canvas. Une pièce servie par storage est lue par HttpClient (jeton
+   * dans l'en-tête, jamais dans l'URL) puis chargée depuis une URL `blob:` — même origine, donc
+   * le canvas n'est pas « tainté » et toBlob() reste possible sans `crossOrigin`. Une pièce CC0
+   * embarquée (chemin statique, même origine) est chargée telle quelle.
+   * Rend aussi l'URL `blob:` éventuelle, à passer à `releaseImage()` une fois l'image dessinée.
+   */
+  private async loadImage(url: string): Promise<{ img: HTMLImageElement; objectUrl: string | null }> {
+    const href = await firstValueFrom(this.blobs.displayUrl(url));
+    const objectUrl = isObjectUrl(href) ? href : null;
+    if (objectUrl) this.objectUrls.add(objectUrl);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error(`Échec de chargement : ${url}`));
+        el.src = href;
+      });
+      return { img, objectUrl };
+    } catch (e) {
+      this.releaseImage(objectUrl);
+      throw e;
+    }
+  }
+
+  private releaseImage(objectUrl: string | null): void {
+    if (!objectUrl) return;
+    URL.revokeObjectURL(objectUrl);
+    this.objectUrls.delete(objectUrl);
   }
 
   private cropToContent(canvas: HTMLCanvasElement): HTMLCanvasElement {
@@ -590,13 +618,17 @@ export class MonsterBuilderComponent implements OnInit {
     const ctx = canvas.getContext('2d')!;
     const cx = CANVAS / 2, cy = CANVAS / 2;
     for (const part of this.placedParts()) {
-      const img = await this.loadImage(this.assetUrl(part.assetId));
-      ctx.save();
-      const px = cx + part.x, py = cy + part.y;
-      ctx.translate(px, py);
-      if (part.flip) ctx.scale(-1, 1);
-      ctx.drawImage(img, -img.width / 2, -img.height / 2, img.width, img.height);
-      ctx.restore();
+      const { img, objectUrl } = await this.loadImage(this.assetUrl(part.assetId));
+      try {
+        ctx.save();
+        const px = cx + part.x, py = cy + part.y;
+        ctx.translate(px, py);
+        if (part.flip) ctx.scale(-1, 1);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2, img.width, img.height);
+        ctx.restore();
+      } finally {
+        this.releaseImage(objectUrl);
+      }
     }
     const cropped = this.cropToContent(canvas);
     return new Promise((resolve, reject) => {

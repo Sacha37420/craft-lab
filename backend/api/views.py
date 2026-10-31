@@ -1,5 +1,4 @@
 import base64
-import binascii
 import hmac
 import uuid
 
@@ -17,6 +16,7 @@ from rest_framework.views import APIView
 from . import catalogue_ai
 from .ai_client import TEXT_PROVIDERS, AIError, AINotConfigured
 from .image_client import IMAGE_PROVIDERS, generate_image
+from . import limits
 from .storage_client import StorageClientError, upload_bytes
 from .models import (
     PROVIDER_CHOICES,
@@ -83,33 +83,6 @@ _VALID_PROVIDERS = {key for key, _ in PROVIDER_CHOICES}
 # Borne haute de `segment_count` (apply-template) : celle du champ « Nombre de
 # segments » de l'interface (monster-builder.component.html, max="20").
 MAX_RIG_SEGMENTS = 20
-
-# Formats d'image acceptés comme icône ou sprite — liste fermée, extension
-# associée. Pas de SVG : c'est un document qui peut porter du script.
-_IMAGE_EXTENSIONS = {
-    'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
-}
-
-
-def _image_type(data: bytes) -> str:
-    """Type MIME d'une image, lu dans son CONTENU (signature de format) — jamais
-    dans l'extension ni dans le type annoncé par le client, qui ne prouvent
-    rien. Lève une erreur de validation si ce n'est aucun des formats acceptés.
-
-    Limite assumée : c'est la signature qui est contrôlée, pas un décodage
-    complet (aucune bibliothèque d'images dans les dépendances de l'app)."""
-    if data.startswith(b'\x89PNG\r\n\x1a\n'):
-        return 'image/png'
-    if data.startswith(b'\xff\xd8\xff'):
-        return 'image/jpeg'
-    if data[:6] in (b'GIF87a', b'GIF89a'):
-        return 'image/gif'
-    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
-        return 'image/webp'
-    raise ValidationError(
-        {'image': "Le fichier n'est pas une image PNG, JPEG, GIF ou WebP."},
-    )
-
 
 def _save_child(serializer, **parent):
     """Enregistre une ligne de sous-liste soumise à une contrainte d'unicité
@@ -349,25 +322,16 @@ class ItemCategoryViewSetMixin:
             qui a produit l'image ailleurs (autre outil IA, dessin...) et
             l'importe telle quelle, sans passer par un fournisseur configuré.
         """
+        # Avant toute lecture du corps : 413 si Content-Length dépasse le plus
+        # gros envoi légitime (api/limits.py).
+        limits.check_request_body(request)
         item = self.get_object().item
-        upload = request.FILES.get('file')
-        if upload is not None:
-            image_bytes = upload.read()
-            mime_type = upload.content_type or 'image/png'
-        else:
-            image_base64 = request.data.get('image_base64')
-            if not image_base64:
-                raise ValidationError({'image_base64': 'Requis (ou "file" en multipart).'})
-            try:
-                image_bytes = base64.b64decode(image_base64, validate=True)
-            except (ValueError, binascii.Error) as exc:
-                raise ValidationError({'image_base64': "Image invalide (base64 non décodable)."}) from exc
-            mime_type = request.data.get('mime_type') or 'image/png'
+        # Taille (413) et décodage réel par Pillow (400), avant tout appel à storage.
+        image_bytes, mime_type, _ = limits.read_image(request)
 
         # Chemin stable par item (pas par génération) : une régénération
         # écrase le même fichier storage (upsert, cf. FileListUploadView côté
         # storage), aucun blob orphelin ne s'accumule.
-        mime_type = _image_type(image_bytes)
         relative_path = f'icons/{item.category}/{item.id}.png'
         try:
             upload_bytes(request.headers.get('Authorization', ''), relative_path, image_bytes, mime_type)
@@ -522,22 +486,9 @@ class MonsterViewSet(viewsets.ModelViewSet):
     def icon(self, request, pk=None):
         """Même logique que ItemCategoryViewSetMixin.icon, sans indirection
         par .item : Monster porte icon_path directement (cf. models.py)."""
+        limits.check_request_body(request)
         monster = self.get_object()
-        upload = request.FILES.get('file')
-        if upload is not None:
-            image_bytes = upload.read()
-            mime_type = upload.content_type or 'image/png'
-        else:
-            image_base64 = request.data.get('image_base64')
-            if not image_base64:
-                raise ValidationError({'image_base64': 'Requis (ou "file" en multipart).'})
-            try:
-                image_bytes = base64.b64decode(image_base64, validate=True)
-            except (ValueError, binascii.Error) as exc:
-                raise ValidationError({'image_base64': "Image invalide (base64 non décodable)."}) from exc
-            mime_type = request.data.get('mime_type') or 'image/png'
-
-        mime_type = _image_type(image_bytes)
+        image_bytes, mime_type, is_upload = limits.read_image(request)
         relative_path = f'icons/monster/{monster.id}.png'
         try:
             upload_bytes(request.headers.get('Authorization', ''), relative_path, image_bytes, mime_type)
@@ -557,7 +508,7 @@ class MonsterViewSet(viewsets.ModelViewSet):
             defaults={
                 'name': monster.name,
                 'category': SpriteAsset.Category.MONSTER_CREATURE,
-                'source': SpriteAsset.Source.UPLOAD if upload is not None else SpriteAsset.Source.AI_GENERATED,
+                'source': SpriteAsset.Source.UPLOAD if is_upload else SpriteAsset.Source.AI_GENERATED,
                 'created_by_email': getattr(request.user, 'email', '') or '',
             },
         )
@@ -784,23 +735,9 @@ class SpriteAssetViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        upload = request.FILES.get('file')
-        if upload is not None:
-            image_bytes = upload.read()
-            mime_type = upload.content_type or 'image/png'
-            source = SpriteAsset.Source.UPLOAD
-        else:
-            image_base64 = request.data.get('image_base64')
-            if not image_base64:
-                raise ValidationError({'image_base64': 'Requis (ou "file" en multipart).'})
-            try:
-                image_bytes = base64.b64decode(image_base64, validate=True)
-            except (ValueError, binascii.Error) as exc:
-                raise ValidationError({'image_base64': "Image invalide (base64 non décodable)."}) from exc
-            mime_type = request.data.get('mime_type') or 'image/png'
-            source = SpriteAsset.Source.AI_GENERATED
-
-        mime_type = _image_type(image_bytes)
+        limits.check_request_body(request)
+        image_bytes, mime_type, is_upload = limits.read_image(request)
+        source = SpriteAsset.Source.UPLOAD if is_upload else SpriteAsset.Source.AI_GENERATED
 
         name = (request.data.get('name') or '').strip()
         if not name:
@@ -819,7 +756,7 @@ class SpriteAssetViewSet(viewsets.ModelViewSet):
         else:
             tags = []
 
-        ext = _IMAGE_EXTENSIONS[mime_type]
+        ext = limits.IMAGE_EXTENSIONS[mime_type]
         relative_path = f'sprite-assets/{category}/{uuid.uuid4().hex}{ext}'
         try:
             upload_bytes(request.headers.get('Authorization', ''), relative_path, image_bytes, mime_type)
@@ -981,5 +918,6 @@ class VerifyRelayTicketView(APIView):
         if not ticket.is_valid():
             return Response({'detail': 'Ticket expiré ou déjà utilisé.'}, status=status.HTTP_410_GONE)
 
-        ticket.consume()
+        if not ticket.consume():
+            return Response({'detail': 'Ticket expiré ou déjà utilisé.'}, status=status.HTTP_410_GONE)
         return Response({'world_id': ticket.world_id, 'owner_email': ticket.owner_email})

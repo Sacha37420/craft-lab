@@ -19,7 +19,7 @@ export interface WorldBlockDef {
   flowSpreadChance: number;
   /** Vide pour un bloc non généré naturellement (uniquement craftable) — le drop par défaut est alors lui-même. */
   drops: WorldBlockDrop[];
-  /** URL absolue déjà résolue (storage + token, cf. ApiService.iconUrl) — null si aucune icône définie
+  /** URL déjà résolue (URL `blob:` d'une icône storage, cf. PlayComponent.resolveTextureUrls) — null si aucune icône définie
    * dans le catalogue, auquel cas GameScene retombe sur la couleur procédurale `color`. */
   iconUrl: string | null;
 }
@@ -60,7 +60,7 @@ export interface WorldMonsterRigPart {
   /** Référence un SpriteAsset (Lot 10) — sert de clé de texture Phaser stable, cf. GameScene.rigPartKey. */
   assetId: number;
   /** URL déjà résolue (ApiService.spriteAssetUrl, cf. PlayComponent) — chemin relatif statique pour
-   * le CC0 embarqué, URL storage + token pour le contenu utilisateur. Résolue UNE fois avant le
+   * le CC0 embarqué, URL `blob:` (lue avec le jeton en en-tête) pour le contenu utilisateur. Résolue UNE fois avant le
    * lancement de Phaser, jamais recalculée dans GameScene (qui ne parle jamais à l'API). */
   textureUrl: string;
   x: number;
@@ -126,7 +126,7 @@ export interface WorldMonsterDef {
   chaseSpeed: number;
   jumpStrength: number;
   drops: WorldMonsterDrop[];
-  /** URL absolue déjà résolue (storage + token) — null si aucune icône définie, repli sur le rond de couleur procédural. */
+  /** URL déjà résolue (URL `blob:` d'une icône storage, cf. PlayComponent.resolveTextureUrls) — null si aucune icône définie, repli sur le rond de couleur procédural. */
   iconUrl: string | null;
   /** Montage par pièces + chorégraphies, textures déjà résolues en URL (cf. WorldMonsterRigPart,
    * Lot 10 — statique pour le CC0 embarqué, storage pour le contenu utilisateur) — undefined pour

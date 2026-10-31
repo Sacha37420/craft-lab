@@ -58,7 +58,7 @@
             <button type="button" class="ai-pack-thumb-btn"
                     [class.ai-pack-thumb-selected]="templateSlotAssets().get(slot.slot_key) === item.id"
                     [title]="item.name" (click)="pickTemplateSlotAsset(slot.slot_key, item.id)">
-              <img [src]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+              <img [appAuthSrc]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
             </button>
           }
           @if ((templateSlotItems().get(slot.slot_key) ?? []).length === 0) {
@@ -130,7 +130,7 @@
           (pointerdown)="startDrag(part.id, $event)"
           (click)="select(part.id)"
         >
-          <img [src]="assetUrl(previewFor(part.id).tempAssetId ?? part.assetId)" alt=""
+          <img [appAuthSrc]="assetUrl(previewFor(part.id).tempAssetId ?? part.assetId)" alt=""
                [style.transform]="'scaleX(' + (part.flip ? -1 : 1) + ') rotate(' + previewFor(part.id).rotationDeg + 'deg)'"
                draggable="false" />
         </div>
@@ -165,7 +165,7 @@
         <div class="ai-pack-grid">
           @for (item of slot.items; track item.id) {
             <button type="button" class="ai-pack-thumb-btn" [title]="item.name" (click)="addPart(item.id, slot.key)">
-              <img [src]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+              <img [appAuthSrc]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
             </button>
           }
         </div>
@@ -237,7 +237,7 @@
         <div class="rig-editor">
           @for (part of placedParts(); track part.id) {
             <div class="rig-part-toolbar" style="border-bottom: 1px solid var(--border); padding-bottom: var(--space-2);">
-              <img [src]="assetUrl(part.assetId)" alt="" class="ai-image-thumb" style="width:32px;height:32px;" />
+              <img [appAuthSrc]="assetUrl(part.assetId)" alt="" class="ai-image-thumb" style="width:32px;height:32px;" />
               <label class="hint">dx
                 <input type="number" step="1" style="width:55px;" [value]="poseFor(step, part.id).dx"
                   (change)="setPoseDx(skill.id, step.id, part.id, $any($event.target).valueAsNumber)" />
@@ -251,7 +251,7 @@
                   (change)="setPoseRotation(skill.id, step.id, part.id, $any($event.target).valueAsNumber)" />
               </label>
               @if (poseFor(step, part.id).tempAssetId) {
-                <img [src]="assetUrl(poseFor(step, part.id).tempAssetId!)" alt="image temporaire" class="ai-image-thumb" style="width:32px;height:32px;" />
+                <img [appAuthSrc]="assetUrl(poseFor(step, part.id).tempAssetId!)" alt="image temporaire" class="ai-image-thumb" style="width:32px;height:32px;" />
                 <button type="button" class="btn btn-secondary btn-sm" (click)="clearTempImage(skill.id, step.id, part.id)">Retirer l'image</button>
               } @else {
                 <button type="button" class="btn btn-secondary btn-sm" (click)="toggleTempImagePicker(part.id)">Image temporaire…</button>
@@ -261,7 +261,7 @@
               <div class="ai-pack-grid">
                 @for (item of effectsItems(); track item.id) {
                   <button type="button" class="ai-pack-thumb-btn" [title]="item.name" (click)="pickTempImage(skill.id, step.id, part.id, item.id)">
-                    <img [src]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
+                    <img [appAuthSrc]="assetUrl(item.id)" [alt]="item.name" class="ai-pack-thumb" loading="lazy" />
                   </button>
                 }
               </div>

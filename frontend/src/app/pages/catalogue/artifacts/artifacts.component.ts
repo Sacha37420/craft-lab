@@ -6,6 +6,7 @@ import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-edit
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 import { describeArtifactForPrompt } from '../../../shared/image-prompt';
+import { AuthSrcDirective } from '../../../shared/auth-src.directive';
 
 const EFFECT_TYPES: { value: string; label: string }[] = [
   { value: 'hp_boost', label: 'PV' },
@@ -26,7 +27,7 @@ const EFFECT_TYPES: { value: string; label: string }[] = [
 @Component({
   selector: 'app-artifacts',
   standalone: true,
-  imports: [FormsModule, JsonPipe, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
+  imports: [AuthSrcDirective, FormsModule, JsonPipe, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './artifacts.component.html',
 })
 export class ArtifactsComponent implements OnInit {

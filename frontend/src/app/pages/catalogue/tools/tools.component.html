@@ -14,7 +14,7 @@
         <div class="catalogue-card">
           <div class="catalogue-card-header">
             <div class="catalogue-card-title">
-              @if (item.icon_url) { <img [src]="api.iconUrl(item.icon_url)" alt="" class="catalogue-card-icon" /> }
+              @if (item.icon_url) { <img [appAuthSrc]="api.iconUrl(item.icon_url)" alt="" class="catalogue-card-icon" /> }
               <strong>{{ item.name }}</strong>
             </div>
             <span class="badge badge-blue">{{ item.tool_type === 'pickaxe' ? 'Pioche' : 'Hache' }}</span>

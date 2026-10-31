@@ -34,16 +34,17 @@ python manage.py test
 - La migration `0002_example_data.py` sème encore `alice@`, `bob@` et `charlie@example.com`.
 **Tâches :**
 - [x] `environment:` minimal pour `relay` (chantier urgences, secteur D) : `BACKEND_INTERNAL_URL` et `RELAY_INTERNAL_KEY` seulement
-- [ ] Taille maximale des envois (413) ; Ⓟ décodage réel par Pillow, si le propriétaire le veut
-- [ ] Migration qui retire les comptes d'exemple, s'ils sont présents
-- [ ] Icônes par `fetch` + `Blob` (chantier T4)
-- [ ] Polices en chemin relatif (404 constaté) ; `tokenBases()` ; PKCE
+- [x] Taille maximale des envois : 10 485 760 octets par icône ou sprite, 413 avant toute lecture du corps si `Content-Length` dépasse la forme base64 + 1 Mo, puis 413 sur la taille exacte (`api/limits.py`) ; décodage réel par Pillow (tranché par le contrat « failles » § 7), 400 sinon — SVG toujours refusé
+- [x] Migration `0022_retirer_comptes_exemple` : retire alice@/bob@/charlie@example.com et leurs départements, seulement s'ils n'ont rien laissé d'autre (sinon ne fait rien et le journalise)
+- [x] Icônes par `HttpClient` + `Blob` (`AuthBlobService`, `[appAuthSrc]`), textures Phaser et composite du montage en URL `blob:` révoquées ; plus aucun `token=` dans une URL
+- [x] Coffre des clés IA sous `VAULT_ENCRYPTION_KEY` (F7), migration `0021_rechiffrer_coffre` ; ports liés à `127.0.0.1` (I1) ; billet du relais consommé atomiquement
+- [x] Polices en chemin relatif (404 constaté) ; `tokenBases()` ; PKCE ; `loginRedirectUri`
 **Tests à passer avant de clore le lot :**
 - [ ] `docker exec craft-lab-relay env` ne montre ni `DB_` ni `SECRET`
-- [ ] Un fichier trop gros reçoit 413
+- [x] Un fichier trop gros reçoit 413
 - [ ] Aucune requête ne porte `token=`
 - [ ] Les WOFF2 répondent 200
-**Vérifié le :** 2026-10-31 (tâche relais seulement, hors service) — `docker compose -f deploiement/craft-lab/docker-compose.yml config` : environnement du relais = `BACKEND_INTERNAL_URL`, `RELAY_INTERNAL_KEY` (non vide, égal à celui du backend), aucun `env_file` ; backend inchangé. `node --check relay/server.js` OK. Variables lues par `server.js` et ses dépendances (`express`, `ws`, `debug`, relevées dans le conteneur en service) : aucune autre n'est fournie par le `.env`. Test « `docker exec craft-lab-relay env` sans `DB_` ni `SECRET` » à jouer après redéploiement.
+**Vérifié le :** 2026-10-31 — chantier « failles » (F7, F9, I1-I4) : `ESSAI_IMAGE=craft-lab-backend:candidat bash chantiers/tests/essai.sh craft-lab` → 112 tests OK (dont `test_failles.py` : 10 485 760 octets acceptés, 10 485 761 → 413, `Content-Length` géant → 413 sans analyse du corps, PNG tronqué, texte renommé `.png`, signatures seules et bombe de décompression → 400, storage jamais appelé ; ancien chiffrement et clair historique relus puis rechiffrés, valeur indéchiffrable lue `''` et laissée intacte ; comptes d'exemple, deux branches) ; `makemigrations --check` : aucun changement ; `npx ng build` vert ; `grep -rnE "token=|\?token" frontend/src` : rien (seul `?ticket=` du relais) ; `docker compose config` : trois ports sur `127.0.0.1` — non déployé. Restent à l'architecte : déploiement, `docker exec craft-lab-relay env`, WOFF2 en 200 et absence de `token=` vérifiées en navigateur. Avant (relais, hors service) : 2026-10-31 (tâche relais seulement, hors service) — `docker compose -f deploiement/craft-lab/docker-compose.yml config` : environnement du relais = `BACKEND_INTERNAL_URL`, `RELAY_INTERNAL_KEY` (non vide, égal à celui du backend), aucun `env_file` ; backend inchangé. `node --check relay/server.js` OK. Variables lues par `server.js` et ses dépendances (`express`, `ws`, `debug`, relevées dans le conteneur en service) : aucune autre n'est fournie par le `.env`. Test « `docker exec craft-lab-relay env` sans `DB_` ni `SECRET` » à jouer après redéploiement.
 
 ## Lot 3 — Lot 13 d'origine : squelette parent-enfant   ·   statut : à faire
 **Objectif :** pièces de monstre articulées (`to_do_craft_lab.md`, Lot 13). [C] Aucun `parentId` dans `models.py`.

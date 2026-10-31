@@ -1,13 +1,14 @@
 import { Component, inject, NgZone, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
-import { forkJoin, Observable, of } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of } from 'rxjs';
 import Phaser from 'phaser';
 import {
   Artifact, ApiService, Block, CatalogueCategoryPath, DepthTier, DepthTierBlockRate,
   DepthTierMonsterSpawn, GameMap, Monster, Projectile, RecipeIngredient, SpriteAsset, Tool, Weapon,
   WeaponProjectileLink, World, WorldGenerationRules,
 } from '../../core/api.service';
+import { AuthBlobService, isObjectUrl } from '../../core/auth-blob.service';
 import { colorForBlockId, TierRules } from '../../shared/world/terrain-generation';
 import { GameScene, InitialCharacterState, PLAYER_SKINS } from './game-scene';
 import {
@@ -72,7 +73,12 @@ interface RemotePlayer {
 })
 export class PlayComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
+  private blobs = inject(AuthBlobService);
   private zone = inject(NgZone);
+  /** URL `blob:` des textures de la partie en cours (icônes storage lues avec le jeton dans
+   * l'en-tête, cf. resolveTextureUrls) — révoquées au relancement, à la sortie et à la destruction. */
+  private textureObjectUrls: string[] = [];
+  private destroyed = false;
 
   maps = signal<GameMap[]>([]);
   loadingMaps = signal(true);
@@ -124,6 +130,7 @@ export class PlayComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.destroyGame();
   }
 
@@ -417,37 +424,95 @@ export class PlayComponent implements OnInit, OnDestroy {
       }));
     this.recipes = recipes;
 
-    if (ctx.worldId != null) {
-      this.loadingWorld.set(false);
-      this.launchPhaser(tierRules, blockDefs, toolDefs, itemsById, monsterDefs, monsterSpawnsByTier, weaponDefs, ctx);
-      return;
-    }
-
-    // Nouvelle partie : la sauvegarde n'existe pas encore côté serveur — on la crée maintenant
-    // que les règles de génération complètes (blocks + monstres) sont connues.
-    const generationRules: WorldGenerationRules = {
-      tiers: tierRules,
-      monsterSpawns: [...monsterSpawnsByTier.entries()].map(([depthIndex, spawns]) => ({ depthIndex, spawns })),
-    };
-    this.api.createWorld({
-      name: ctx.worldName, source_map_name: ctx.sourceMapName, seed: ctx.seed, generation_rules: generationRules,
-    }).subscribe({
-      next: created => {
+    // Les icônes servies par storage exigent le jeton dans l'en-tête : elles sont lues ici par
+    // HttpClient et remplacées par des URL `blob:` AVANT la construction du jeu (le chargeur Phaser
+    // ne pose aucun en-tête ; il accepte une URL `blob:` telle quelle, cf. phaser/src/loader/GetURL.js).
+    this.resolveTextureUrls(blockDefs, monsterDefs, weaponDefs).subscribe(created => {
+      if (this.destroyed) { created.forEach(u => URL.revokeObjectURL(u)); return; }
+      if (ctx.worldId != null) {
         this.loadingWorld.set(false);
-        this.launchPhaser(tierRules, blockDefs, toolDefs, itemsById, monsterDefs, monsterSpawnsByTier, weaponDefs, {
-          ...ctx, worldId: created.id!,
-        });
-      },
-      error: () => { this.error.set('Erreur lors de la création de la partie.'); this.loadingWorld.set(false); },
+        this.launchPhaser(tierRules, blockDefs, toolDefs, itemsById, monsterDefs, monsterSpawnsByTier, weaponDefs, ctx, created);
+        return;
+      }
+
+      // Nouvelle partie : la sauvegarde n'existe pas encore côté serveur — on la crée maintenant
+      // que les règles de génération complètes (blocks + monstres) sont connues.
+      const generationRules: WorldGenerationRules = {
+        tiers: tierRules,
+        monsterSpawns: [...monsterSpawnsByTier.entries()].map(([depthIndex, spawns]) => ({ depthIndex, spawns })),
+      };
+      this.api.createWorld({
+        name: ctx.worldName, source_map_name: ctx.sourceMapName, seed: ctx.seed, generation_rules: generationRules,
+      }).subscribe({
+        next: world => {
+          this.loadingWorld.set(false);
+          this.launchPhaser(tierRules, blockDefs, toolDefs, itemsById, monsterDefs, monsterSpawnsByTier, weaponDefs, {
+            ...ctx, worldId: world.id!,
+          }, created);
+        },
+        error: () => {
+          created.forEach(u => URL.revokeObjectURL(u));
+          this.error.set('Erreur lors de la création de la partie.'); this.loadingWorld.set(false);
+        },
+      });
     });
+  }
+
+  /**
+   * Remplace en place chaque URL storage des définitions du jeu (icônes de blocks, monstres,
+   * projectiles ; textures du rig) par une URL `blob:` — une seule lecture par adresse distincte.
+   * Une adresse statique (CC0 embarqué) reste telle quelle. Une lecture en échec donne une URL
+   * vide : la texture est omise, comme l'était un 404 auparavant, sans bloquer la partie.
+   * Rend les URL `blob:` créées, que l'appelant confie à launchPhaser (qui les révoque ensuite).
+   */
+  private resolveTextureUrls(
+    blockDefs: Map<number, WorldBlockDef>, monsterDefs: Map<number, WorldMonsterDef>, weaponDefs: WorldWeaponDef[],
+  ): Observable<string[]> {
+    const projectiles: WorldProjectileDef[] = [
+      ...weaponDefs.map(w => w.projectile),
+      ...[...monsterDefs.values()].map(m => m.projectile),
+    ].filter((p): p is WorldProjectileDef => !!p);
+    const raw = new Set<string>();
+    const add = (u: string | null | undefined) => { if (u) raw.add(u); };
+    blockDefs.forEach(b => add(b.iconUrl));
+    projectiles.forEach(p => add(p.iconUrl));
+    monsterDefs.forEach(m => {
+      add(m.iconUrl);
+      m.rig?.parts.forEach(part => add(part.textureUrl));
+      m.rig?.skills.forEach(skill => skill.steps.forEach(step =>
+        Object.values(step.poses).forEach(pose => add(pose.tempTextureUrl))));
+    });
+    const urls = [...raw];
+    return forkJoinOrEmpty(urls.map(u => this.blobs.displayUrl(u).pipe(catchError(() => of('')))))
+      .pipe(map(resolved => {
+        const byRaw = new Map(urls.map((u, i) => [u, resolved[i]]));
+        const swap = (u: string): string => byRaw.get(u) ?? u;
+        blockDefs.forEach(b => { if (b.iconUrl) b.iconUrl = swap(b.iconUrl) || null; });
+        projectiles.forEach(p => { if (p.iconUrl) p.iconUrl = swap(p.iconUrl) || null; });
+        monsterDefs.forEach(m => {
+          if (m.iconUrl) m.iconUrl = swap(m.iconUrl) || null;
+          m.rig?.parts.forEach(part => { part.textureUrl = swap(part.textureUrl); });
+          m.rig?.skills.forEach(skill => skill.steps.forEach(step =>
+            Object.values(step.poses).forEach(pose => {
+              if (pose.tempTextureUrl) pose.tempTextureUrl = swap(pose.tempTextureUrl);
+            })));
+        });
+        return resolved.filter(isObjectUrl);
+      }));
+  }
+
+  private revokeTextureUrls(): void {
+    this.textureObjectUrls.forEach(u => URL.revokeObjectURL(u));
+    this.textureObjectUrls = [];
   }
 
   private launchPhaser(
     tiers: TierRules[], blockDefs: Map<number, WorldBlockDef>, tools: WorldToolDef[], itemsById: Map<number, WorldItemRef>,
     monsters: Map<number, WorldMonsterDef>, monsterSpawnsByTier: Map<number, WorldMonsterSpawnRate[]>,
-    weapons: WorldWeaponDef[], ctx: LaunchContext,
+    weapons: WorldWeaponDef[], ctx: LaunchContext, textureObjectUrls: string[],
   ): void {
     this.destroyGame();
+    this.textureObjectUrls = textureObjectUrls;
     this.inventory.set([]);
     this.selectedBlockId.set(null);
     this.equippedWeaponId.set(ctx.initialCharacter?.equippedWeaponId ?? null);
@@ -728,6 +793,7 @@ export class PlayComponent implements OnInit, OnDestroy {
     if (this.pendingLaunchTimeout) { clearTimeout(this.pendingLaunchTimeout); this.pendingLaunchTimeout = undefined; }
     this.disconnectRelay();
     if (this.game) { this.game.destroy(true); this.game = null; }
+    this.revokeTextureUrls();
     this.scene = null;
     this.worldId.set(null);
     this.playing.set(false);

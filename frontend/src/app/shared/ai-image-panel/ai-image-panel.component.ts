@@ -4,6 +4,8 @@ import { RouterLink } from '@angular/router';
 import {
   ApiService, CatalogueCategoryPath, GeneratedImage, ImageProvider, SpriteAsset, SpriteAssetCategory,
 } from '../../core/api.service';
+import { AuthBlobService } from '../../core/auth-blob.service';
+import { AuthSrcDirective } from '../auth-src.directive';
 
 /** Libellés d'affichage des catégories de la bibliothèque partagée (Lot 10) — 'monster-part' en est
  * délibérément exclu ici : une pièce de montage n'a pas de sens comme icône plate d'un objet du
@@ -50,11 +52,12 @@ interface SpriteLibraryCategoryGroup {
 @Component({
   selector: 'app-ai-image-panel',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, AuthSrcDirective],
   templateUrl: './ai-image-panel.component.html',
 })
 export class AiImagePanelComponent implements OnInit {
   private api = inject(ApiService);
+  private blobs = inject(AuthBlobService);
 
   category = input.required<CatalogueCategoryPath>();
   itemId = input.required<number>();
@@ -130,12 +133,10 @@ export class AiImagePanelComponent implements OnInit {
   pickFromLibrary(item: SpriteAsset): void {
     this.pickingId.set(item.id);
     this.error.set(null);
-    fetch(this.libraryAssetUrl(item))
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.blob();
-      })
-      .then(blob => {
+    // Lu par HttpClient : le jeton part dans l'en-tête (storage), jamais dans l'URL ; une adresse
+    // statique CC0 part sans jeton (hors de tokenBases()).
+    this.blobs.blob(this.libraryAssetUrl(item)).subscribe({
+      next: blob => {
         const name = `${item.name || 'sprite'}.png`;
         const file = new File([blob], name, { type: blob.type || 'image/png' });
         this.api.uploadIconFile(this.category(), this.itemId(), file).subscribe({
@@ -145,11 +146,12 @@ export class AiImagePanelComponent implements OnInit {
             this.error.set(err.error?.detail ?? `Erreur ${err.status}`);
           },
         });
-      })
-      .catch(() => {
+      },
+      error: () => {
         this.pickingId.set(null);
         this.error.set('Impossible de récupérer ce sprite.');
-      });
+      },
+    });
   }
 
   get currentIconSrc(): string {

@@ -6,6 +6,7 @@ import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-edit
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 import { describeBlockForPrompt } from '../../../shared/image-prompt';
+import { AuthSrcDirective } from '../../../shared/auth-src.directive';
 
 /**
  * Blocks de base et liquides (cahier des charges 1.6/1.7) — un seul modèle :
@@ -15,7 +16,7 @@ import { describeBlockForPrompt } from '../../../shared/image-prompt';
 @Component({
   selector: 'app-blocks',
   standalone: true,
-  imports: [FormsModule, PercentPipe, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
+  imports: [AuthSrcDirective, FormsModule, PercentPipe, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './blocks.component.html',
 })
 export class BlocksComponent implements OnInit {

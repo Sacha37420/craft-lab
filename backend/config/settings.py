@@ -6,6 +6,10 @@ from decouple import config
 
 # ── Sécurité ──────────────────────────────────────────────────────────────────
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-craft_lab-change-in-production')
+# Clé du coffre (api/fields.py — clés d'API des fournisseurs IA) — distincte de
+# SECRET_KEY, sans valeur par défaut : un secret chiffré ne doit jamais dépendre
+# d'une clé qu'on fait tourner.
+VAULT_ENCRYPTION_KEY = config('VAULT_ENCRYPTION_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*').split(',')
 
@@ -69,6 +73,20 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
+
+# ── Envoi d'icônes et de sprites (api/limits.py) ─────────────────────────────
+# 10 Mo par fichier (chantier « failles », contrat v1 § 7 — décision close) :
+# 413 avant tout appel à storage ; un corps annoncé (Content-Length) plus gros
+# que le plus gros envoi légitime est refusé avant d'être lu.
+IMAGE_MAX_BYTES = 10 * 1024 * 1024
+# Cohérents avec la limite : une image à la limite tient en mémoire (elle est
+# de toute façon lue en entier pour être décodée par Pillow), et un champ non
+# fichier ne peut pas dépasser la forme base64 d'une image à la limite plus la
+# marge (même calcul que api/limits.body_max_bytes). DRF n'applique pas
+# DATA_UPLOAD_MAX_MEMORY_SIZE à un corps JSON : c'est check_request_body qui
+# borne le corps des routes d'envoi.
+FILE_UPLOAD_MAX_MEMORY_SIZE = IMAGE_MAX_BYTES
+DATA_UPLOAD_MAX_MEMORY_SIZE = -(-IMAGE_MAX_BYTES // 3) * 4 + 1024 * 1024
 
 # ── Keycloak ───────────────────────────────────────────────────────────────────
 KEYCLOAK_ISSUER_URI = config(

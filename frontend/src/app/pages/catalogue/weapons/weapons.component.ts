@@ -5,12 +5,13 @@ import { RecipeEditorComponent } from '../../../shared/recipe-editor/recipe-edit
 import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-suggest-panel.component';
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 import { describeWeaponForPrompt } from '../../../shared/image-prompt';
+import { AuthSrcDirective } from '../../../shared/auth-src.directive';
 
 /** Armes (cahier des charges 1.2) — sous-catégories mêlée/distance/magique/invocation. */
 @Component({
   selector: 'app-weapons',
   standalone: true,
-  imports: [FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
+  imports: [AuthSrcDirective, FormsModule, RecipeEditorComponent, AiSuggestPanelComponent, AiImagePanelComponent],
   templateUrl: './weapons.component.html',
 })
 export class WeaponsComponent implements OnInit {

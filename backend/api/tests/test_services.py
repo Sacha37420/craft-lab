@@ -17,11 +17,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from api.models import AIProviderConfig, Item, Monster, SpriteAsset
 
 from .base import (
-    STORAGE, CraftTestCase, colonnes_brutes, make_block, make_monster, make_weapon,
+    STORAGE, CraftTestCase, colonnes_brutes, image, make_block, make_monster, make_weapon,
     reponse, token,
 )
 
-PNG = b'\x89PNG\r\n\x1a\n' + b'octets-de-test'
+PNG = image('PNG')
 PNG_B64 = base64.b64encode(PNG).decode()
 
 
@@ -128,9 +128,9 @@ class IconesTests(CraftTestCase):
         self.assertEqual(Monster.objects.get().icon_path, '')
 
 
-JPEG = b'\xff\xd8\xff\xe0\x00\x10JFIF' + b'octets'
-GIF = b'GIF89a' + b'octets'
-WEBP = b'RIFF\x10\x00\x00\x00WEBPVP8 ' + b'octets'
+JPEG = image('JPEG')
+GIF = image('GIF')
+WEBP = image('WEBP')
 PAS_DES_IMAGES = {
     'html': b'<!doctype html><script>alert(1)</script>',
     'svg': b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
@@ -138,6 +138,12 @@ PAS_DES_IMAGES = {
     'executable': b'MZ\x90\x00\x03',
     'riff_non_webp': b'RIFF\x10\x00\x00\x00WAVEfmt ',
     'png_tronque': b'\x89PNG',
+    # Signature valide, contenu qui ne se décode pas : refusé depuis le décodage
+    # réel par Pillow (chantier « failles », F9).
+    'signature_png_seule': b'\x89PNG\r\n\x1a\n' + b'octets-de-test',
+    'signature_jpeg_seule': b'\xff\xd8\xff\xe0\x00\x10JFIF' + b'octets',
+    'signature_gif_seule': b'GIF89a' + b'octets',
+    'signature_webp_seule': b'RIFF\x10\x00\x00\x00WEBPVP8 ' + b'octets',
     'vide': b'',
 }
 

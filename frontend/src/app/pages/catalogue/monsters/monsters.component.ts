@@ -8,6 +8,7 @@ import { AiSuggestPanelComponent } from '../../../shared/ai-suggest-panel/ai-sug
 import { AiImagePanelComponent } from '../../../shared/ai-image-panel/ai-image-panel.component';
 import { MonsterBuilderComponent } from '../../../shared/monster-builder/monster-builder.component';
 import { describeMonsterForPrompt } from '../../../shared/image-prompt';
+import { AuthSrcDirective } from '../../../shared/auth-src.directive';
 
 const ATTACK_TYPES: { value: Monster['attack_type']; label: string }[] = [
   { value: 'melee', label: 'Corps à corps' },
@@ -26,7 +27,7 @@ const ATTACK_TYPES: { value: Monster['attack_type']; label: string }[] = [
 @Component({
   selector: 'app-monsters',
   standalone: true,
-  imports: [FormsModule, PercentPipe, AiSuggestPanelComponent, AiImagePanelComponent, MonsterBuilderComponent],
+  imports: [AuthSrcDirective, FormsModule, PercentPipe, AiSuggestPanelComponent, AiImagePanelComponent, MonsterBuilderComponent],
   templateUrl: './monsters.component.html',
 })
 export class MonstersComponent implements OnInit {
