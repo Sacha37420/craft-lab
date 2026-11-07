@@ -23,7 +23,7 @@ python manage.py test
 - [x] 93 tests backend ; `cloisonnement.spec.ts` identique au gabarit
 **Vérifié le :** 2026-10-31 — relevé par lecture (version en service = `499529d`), tests non rejoués.
 
-## Lot 2 — Hygiène   ·   statut : en cours
+## Lot 2 — Hygiène   ·   statut : livré
 **Objectif :** relais sans secrets, envois bornés, plus de comptes d'exemple, jeton hors des URL.
 **Constat [C] :**
 - **P1.** Le relais reçoit `env_file: .env` complet : `SECRET_KEY`, clé Fernet des clés IA, et
@@ -45,6 +45,9 @@ python manage.py test
 - [x] Aucune requête ne porte `token=` — vérifié le 2026-11-01 (lab-runner, `e2e_member`)
 - [x] Les WOFF2 répondent 200 — vérifié le 2026-11-01 (lab-runner, `e2e_member`)
 **Vérifié le :** 2026-10-31 — chantier « failles » (F7, F9, I1-I4) : `ESSAI_IMAGE=craft-lab-backend:candidat bash chantiers/tests/essai.sh craft-lab` → 112 tests OK (dont `test_failles.py` : 10 485 760 octets acceptés, 10 485 761 → 413, `Content-Length` géant → 413 sans analyse du corps, PNG tronqué, texte renommé `.png`, signatures seules et bombe de décompression → 400, storage jamais appelé ; ancien chiffrement et clair historique relus puis rechiffrés, valeur indéchiffrable lue `''` et laissée intacte ; comptes d'exemple, deux branches) ; `makemigrations --check` : aucun changement ; `npx ng build` vert ; `grep -rnE "token=|\?token" frontend/src` : rien (seul `?ticket=` du relais) ; `docker compose config` : trois ports sur `127.0.0.1` — non déployé. Restent à l'architecte : déploiement, `docker exec craft-lab-relay env`, WOFF2 en 200 et absence de `token=` vérifiées en navigateur. Avant (relais, hors service) : 2026-10-31 (tâche relais seulement, hors service) — `docker compose -f deploiement/craft-lab/docker-compose.yml config` : environnement du relais = `BACKEND_INTERNAL_URL`, `RELAY_INTERNAL_KEY` (non vide, égal à celui du backend), aucun `env_file` ; backend inchangé. `node --check relay/server.js` OK. Variables lues par `server.js` et ses dépendances (`express`, `ws`, `debug`, relevées dans le conteneur en service) : aucune autre n'est fournie par le `.env`. Test « `docker exec craft-lab-relay env` sans `DB_` ni `SECRET` » à jouer après redéploiement.
+**Relecture du 2026-11-08 (nuit) :** passé à « livré » : toutes les cases sont cochées (les tests
+navigateur et `docker exec … env` le 2026-11-01), et `e5872f8` est dans la version en service
+(`d573099`, chantier « failles »).
 
 ## Lot 3 — Lot 13 d'origine : squelette parent-enfant   ·   statut : à faire
 **Objectif :** pièces de monstre articulées (`to_do_craft_lab.md`, Lot 13). [C] Aucun `parentId` dans `models.py`.
@@ -92,7 +95,7 @@ python manage.py test
 - [ ] `README.md` : architecture (backend, relais, Phaser), bibliothèque d'assets, licences CC0
 - [ ] Tests du relais (aucun aujourd'hui) : clé interne, messages mal formés
 **Tests à passer avant de clore le lot :**
-- [ ] `validate-app.sh craft-lab --quality-only` vert ; cloisonnement `ok` par le moteur
+- [ ] `validate-app.sh craft-lab --quality-only` vert ; cloisonnement `ok` par le moteur — *déjà acquis, à revérifier à la clôture : 2026-11-01, cloisonnement `ok`, origine `moteur` (`<LAB_STATE_DIR>/tests/craft-lab.json`) ; 2026-11-08, `--quality-only` code 0 (copie de ce dossier, outil `valq.sh` du chantier de nuit)*
 **Vérifié le :**
 
 ## Mise en service — chantier « failles » (2026-11-01)
